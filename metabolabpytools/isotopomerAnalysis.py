@@ -28,6 +28,8 @@ class IsotopomerAnalysis:
         self.isotopomer_percentages = {}
         self.nmr_isotopomers = {}
         self.nmr_isotopomer_percentages = {}
+        self.gcms_percentages = {}
+        self.nmr1d_percentages = {}
         # end __init__
 
     def __str__(self):  # pragma: no cover
@@ -66,6 +68,8 @@ class IsotopomerAnalysis:
                 self.isotopomer_percentages[k] = []
                 self.nmr_isotopomers[k] = []
                 self.nmr_isotopomer_percentages[k] = []
+                self.gcms_percentages[k] = []
+                self.nmr1d_percentages[k] = []
 
         self.metabolites = sorted(list(set(self.metabolites)))
         self.n_exps = int(len(self.nmr_multiplets[self.metabolites[0]].keys()    )/6)
@@ -92,6 +96,8 @@ class IsotopomerAnalysis:
                 self.isotopomer_percentages[k] = []
                 self.nmr_isotopomers[k] = []
                 self.nmr_isotopomer_percentages[k] = []
+                self.gcms_percentages[k] = []
+                self.nmr1d_percentages[k] = []
 
 
         self.metabolites = sorted(list(set(self.metabolites)))
@@ -188,8 +194,27 @@ class IsotopomerAnalysis:
         self.nmr_isotopomer_percentages[metabolite] = new_isotopomer_percentages.copy()
     # end set_hsqc_isotopomers
 
-    def set_gcms_isotopomers(self):
-        if len(self.gcms_data.keys()) == 0:
+    def set_gcms_isotopomers(self, metabolite=''):
+        if len(metabolite) == 0 or metabolite not in self.metabolites:
             return
 
+        d_sums = []
+        for k in range(len(self.fit_isotopomers[metabolite])):
+            d_sums.append(sum(self.fit_isotopomers[metabolite][k]))
+
+
+        d_sums = np.array(d_sums)
+        gcms_data = list(np.zeros(len(self.nmr_multiplets[metabolite]['HSQC.0'][0].split()) + 1, dtype=int))
+        percentages = np.array(self.isotopomer_percentages[metabolite].copy())
+        for k in range(len(gcms_data)):
+            gcms_data[k] = percentages[np.where(d_sums == k)].sum()
+
+        self.gcms_isotopomers[metabolite] = gcms_data.copy()
     # end set_gcms_isotopomers
+
+    def set_nmr1d_percentages(self, metabolite=''):
+        if len(metabolite) == 0 or metabolite not in self.metabolites:
+            return
+
+
+    # end set_nmr1d_isotopomers
