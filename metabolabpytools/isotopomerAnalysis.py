@@ -209,12 +209,16 @@ class IsotopomerAnalysis:
         for k in range(len(gcms_data)):
             gcms_data[k] = percentages[np.where(d_sums == k)].sum()
 
-        self.gcms_isotopomers[metabolite] = gcms_data.copy()
+        self.gcms_percentages[metabolite] = gcms_data.copy()
     # end set_gcms_isotopomers
 
     def set_nmr1d_percentages(self, metabolite=''):
         if len(metabolite) == 0 or metabolite not in self.metabolites:
             return
 
+        self.nmr1d_percentages[metabolite] = np.zeros(len(self.nmr_isotopomers[metabolite][0]))
+        for k in range(len(self.nmr_isotopomers[metabolite])):
+            self.nmr1d_percentages[metabolite] += np.array(self.nmr_isotopomers[metabolite][k])*self.nmr_isotopomer_percentages[metabolite][k]
 
+        self.nmr1d_percentages[metabolite] = list(self.nmr1d_percentages[metabolite])
     # end set_nmr1d_isotopomers
