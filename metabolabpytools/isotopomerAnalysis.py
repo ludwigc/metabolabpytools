@@ -5,7 +5,7 @@ import scipy as sp
 import os
 import math
 import time
-import metabolabpy.__init__ as ml_version
+
 
 
 class IsotopomerAnalysis:
@@ -15,8 +15,8 @@ class IsotopomerAnalysis:
         self.nmr_tocsy_multiplets = pd.DataFrame()
         self.gcms_data = pd.DataFrame()
         self.lcms_data = pd.DataFrame()
-        self.nmr_1d_data = pd.DataFrame()
-        self.ver = ml_version.__version__
+        self.nmr1d_data = pd.DataFrame()
+        self.ver = '0.8.21'
         self.nat_abundance = 1.07  # [%]
         self.gcms_scaling = 1.0
         self.hsqc_scaling = 1.0
@@ -30,6 +30,11 @@ class IsotopomerAnalysis:
         self.nmr_isotopomer_percentages = {}
         self.gcms_percentages = {}
         self.nmr1d_percentages = {}
+        self.exp_multiplets = {}
+        self.exp_multiplet_percentages = {}
+        self.exp_gcms = {}
+        self.exp_nmr1d = {}
+        self.hsqc = {}
         # end __init__
 
     def __str__(self):  # pragma: no cover
@@ -55,6 +60,10 @@ class IsotopomerAnalysis:
         print(f'isotopomers: {self.fit_isotopomers[metabolite]}\npercentages: {self.isotopomer_percentages[metabolite]}')
     # end metabolite
 
+    def multiplet_fct(self):
+        return
+    # end multiplet_fct
+
     def read_hsqc_multiplets(self, file_name=''):
         if len(file_name) == 0:
             return
@@ -72,7 +81,25 @@ class IsotopomerAnalysis:
                 self.nmr1d_percentages[k] = []
 
         self.metabolites = sorted(list(set(self.metabolites)))
-        self.n_exps = int(len(self.nmr_multiplets[self.metabolites[0]].keys()    )/6)
+        self.n_exps = int(len(self.nmr_multiplets[self.metabolites[0]].keys())/6)
+        for k in self.metabolites:
+            self.hsqc[k] = list(map(int, self.nmr_multiplets[k]['HSQC.0'][0].split()))
+            self.exp_multiplets[k] = []
+            self.exp_multiplet_percentages[k] = []
+            for l in range(self.n_exps):
+                multiplet_string  = f'Multiplet.{l}'
+                percentages_string = f'Percentages.{l}'
+                multiplets = self.nmr_multiplets[k][multiplet_string]
+                percentages = self.nmr_multiplets[k][percentages_string]
+                exp_multiplets = []
+                exp_percentages = []
+                for m in range(len(multiplets)):
+                    exp_multiplets.append(list(map(int, multiplets[m].replace(',', '').split())))
+                    exp_percentages.append(percentages[m])
+
+                self.exp_multiplets[k].append(exp_multiplets)
+                self.exp_multiplet_percentages[k].append(exp_percentages)
+
         return
     # end read_hsqc_multiplets
 
@@ -80,7 +107,29 @@ class IsotopomerAnalysis:
         if len(file_name) == 0:
             return
 
-        self.nmr_1d_data = pd.read_excel(file_name, sheet_name=None, keep_default_na=False)
+        self.nmr1d_data = pd.read_excel(file_name, sheet_name=None, keep_default_na=False)
+        for k in self.nmr1d_data.keys():
+            self.metabolites.append(k)
+            if k not in self.fit_isotopomers.keys():
+                self.fit_isotopomers[k] = []
+                self.isotopomer_percentages[k] = []
+                self.nmr_isotopomers[k] = []
+                self.nmr_isotopomer_percentages[k] = []
+                self.gcms_percentages[k] = []
+                self.nmr1d_percentages[k] = []
+
+        self.n_exps = int(len(self.nmr1d_data[self.metabolites[0]].keys())/4)
+        self.exp_nmr1d[k] = []
+        for l in range(self.n_exps):
+            percentages_string = f'Percentages.{l}'
+            percentages = self.nmr1d_data[k][percentages_string]
+            exp_percentages = []
+            for m in range(len(percentages)):
+                exp_percentages.append(percentages[m])
+
+            self.exp_nmr1d[k].append(exp_percentages)
+
+
         return
     # end read_nmr1d_data
 
@@ -101,6 +150,17 @@ class IsotopomerAnalysis:
 
 
         self.metabolites = sorted(list(set(self.metabolites)))
+        self.n_exps = int(len(self.gcms_data[self.metabolites[0]].keys())/4)
+        self.exp_gcms[k] = []
+        for l in range(self.n_exps):
+            percentages_string = f'Percentages.{l}'
+            percentages = self.gcms_data[k][percentages_string]
+            exp_percentages = []
+            for m in range(len(percentages)):
+                exp_percentages.append(percentages[m])
+
+            self.exp_gcms[k].append(exp_percentages)
+
         return
     # end read_gcms_data
 
