@@ -194,7 +194,7 @@ class IsotopomerAnalysis:
         self.nmr_isotopomer_percentages[metabolite] = new_isotopomer_percentages.copy()
     # end set_hsqc_isotopomers
 
-    def set_gcms_isotopomers(self, metabolite=''):
+    def set_gcms_percentages(self, metabolite=''):
         if len(metabolite) == 0 or metabolite not in self.metabolites:
             return
 
