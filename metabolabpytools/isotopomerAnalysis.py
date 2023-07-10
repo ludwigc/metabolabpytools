@@ -41,6 +41,8 @@ class IsotopomerAnalysis:
         self.fitted_multiplet_percentages = {}
         self.fitted_gcms = {}
         self.fitted_nmr1d = {}
+        self.exp_hsqc_isos = {}
+        self.n_bonds = {}
         # end __init__
 
     def __str__(self):  # pragma: no cover
@@ -49,6 +51,58 @@ class IsotopomerAnalysis:
         r_string += '______________________________________________________________________________________\n\n'
         return r_string
         # end __str__
+
+    def fct_hsqc_data(self, exp_index=0, metabolite=''):
+        if len(metabolite) == 0:
+            return
+
+        print(f'nmr_isotopomers: {self.nmr_isotopomers[metabolite]}')
+        d = self.exp_multiplets[metabolite][exp_index]
+        n = self.nmr_isotopomers[metabolite]
+        p = self.nmr_isotopomer_percentages[metabolite]
+        nn = []
+        pp = []
+        num_carbons = len(self.hsqc[metabolite])
+        n_bonds = self.n_bonds[m]
+        for k in range(num_carbons):
+            nn.append([])
+            pp.append([])
+            for l in range(len(n)):
+                if n[l][k] == 1:
+                    nn[k].append(n[l])
+                    pp[k].append(p[l])
+
+        for k in range(num_carbons):
+            min_idx = max(0, k - n_bonds)
+            max_idx = min(num_carbons, k + n_bonds + 1)
+            for l in range(len(nn[k])):
+                nnn = np.array(nn[k][l])
+                for a in range(0, min_idx):
+                    nnn[a] = 0
+
+                for b in range(max_idx, num_carbons):
+                    nnn[b] = 0
+
+                nn[k][l] = list(nnn)
+
+        mm = []
+        qq = []
+        #nnn = list(np.array(nn[]))
+        #for k in len(nn):
+        #    mm.append([])
+        #    qq.append([])
+        #    for l in len(nn[k]):
+        #        if nn[k][l] in mm[k]:
+        #            qq[k]
+        #for m in range(len(self.exp_multiplets[k][l])):
+        #    for n in range(len(self.exp_multiplets[k][l])):
+        #        zero_iso = np.zeros(len(self.hsqc[k]), dtype=int)
+        #        for o in range(len(self.exp_multiplets[k][l][n])):
+        #            zero_iso[self.exp_multiplets[k][l][n][o] - 1] = 1
+        #
+        #        print(f'dd[{n}] = {zero_iso}')
+        return
+    # end fct_hsqc_data
 
     def metabolite(self, metabolite=''):
         if len(metabolite) == 0 or metabolite not in self.metabolites:
@@ -85,6 +139,7 @@ class IsotopomerAnalysis:
                 self.nmr_isotopomer_percentages[k] = []
                 self.gcms_percentages[k] = []
                 self.nmr1d_percentages[k] = []
+                self.n_bonds[k] = []
 
         self.metabolites = sorted(list(set(self.metabolites)))
         self.n_exps = int(len(self.nmr_multiplets[self.metabolites[0]].keys())/6)
@@ -92,6 +147,9 @@ class IsotopomerAnalysis:
             self.hsqc[k] = list(map(int, self.nmr_multiplets[k]['HSQC.0'][0].split()))
             self.exp_multiplets[k] = []
             self.exp_multiplet_percentages[k] = []
+            self.exp_hsqc_isos[k] = []
+            self.n_bonds[k] = int(self.nmr_multiplets[k]['HSQC.0'][1].replace('n_bonds: ', ''))
+            zero_iso = np.zeros(len(self.hsqc[k]))
             for l in range(self.n_exps):
                 multiplet_string  = f'Multiplet.{l}'
                 percentages_string = f'Percentages.{l}'
@@ -99,6 +157,7 @@ class IsotopomerAnalysis:
                 percentages = self.nmr_multiplets[k][percentages_string]
                 exp_multiplets = []
                 exp_percentages = []
+                exp_hsqc_isos = []
                 for m in range(len(multiplets)):
                     exp_multiplets.append(list(map(int, multiplets[m].replace(',', '').split())))
                     exp_percentages.append(percentages[m])
