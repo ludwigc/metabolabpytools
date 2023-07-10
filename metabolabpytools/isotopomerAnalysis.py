@@ -35,6 +35,12 @@ class IsotopomerAnalysis:
         self.exp_gcms = {}
         self.exp_nmr1d = {}
         self.hsqc = {}
+        self.fitted_isotopomers = {}
+        self.fitted_isotopomer_percentages = {}
+        self.fitted_multiplets = {}
+        self.fitted_multiplet_percentages = {}
+        self.fitted_gcms = {}
+        self.fitted_nmr1d = {}
         # end __init__
 
     def __str__(self):  # pragma: no cover
