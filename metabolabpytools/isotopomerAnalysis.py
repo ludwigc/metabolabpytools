@@ -6,6 +6,8 @@ import os
 import math
 import time
 from scipy import optimize
+from openpyxl import Workbook  # pragma: no cover
+
 
 
 
@@ -62,6 +64,43 @@ class IsotopomerAnalysis:
         return r_string
         # end __str__
 
+    def export_data(self, file_name=''):
+        wb = Workbook()
+        wb.remove(wb.active)
+        for k in self.metabolites:
+            wb.create_sheet(k)
+            wb[k]["A1"] = "Experiment"
+            wb[k]["B1"] = "Fitted Isotopomers"
+            wb[k]["C1"] = "Fitted Isotopomer %"
+            wb[k]["D1"] = "Multiplets"
+            wb[k]["E1"] = "Exp. %"
+            wb[k]["F1"] = "Sim. %"
+            wb[k]["G1"] = "Exp. GC-MS %"
+            wb[k]["H1"] = "Sim. GC-MS %"
+            wb[k]["I1"] = "Exp. NMR1D %"
+            wb[k]["J1"] = "Sim. NMR1D %"
+            index = 2
+            for l in range(self.n_exps):
+                wb[k][f'A{int(index)}'] = str(l + 1)
+                for m in range(len(self.fitted_isotopomers[k][l])):
+                    wb[k][f'B{int(index + m)}'] = str(self.fitted_isotopomers[k][l][m])
+                    wb[k][f'C{int(index + m)}'] = str(f'{self.fitted_isotopomer_percentages[k][l][m]:4.2f}')
+
+                for m in range(len(self.fitted_multiplets[k][l])):
+                    wb[k][f'D{int(index + m)}'] = str(self.fitted_multiplets[k][l][m])
+                    wb[k][f'E{int(index + m)}'] = str(f'{self.exp_multiplet_percentages[k][l][m]:4.2f}')
+                    wb[k][f'F{int(index + m)}'] = str(f'{self.fitted_multiplet_percentages[k][l][m]:4.2f}')
+
+                wb[k][f'G{int(index)}'] = str(np.round(np.array(self.exp_gcms[k][l])*100)/100)
+                wb[k][f'H{int(index)}'] = str(np.round(np.array(self.fitted_gcms_percentages[k][l])*100)/100)
+                wb[k][f'I{int(index)}'] = str(np.round(np.array(self.exp_nmr1d[k][l])*100)/100)
+                wb[k][f'J{int(index)}'] = str(np.round(np.array(self.fitted_nmr1d_percentages[k][l])*100)/100)
+                index += int(np.max(np.array([len(self.fitted_isotopomers[k][l]), len(self.fitted_multiplets[k][l]), 1.0])))
+
+            wb.save(file_name)
+
+    # end export_data
+
     def fct_data(self, fit_parameters):
         self.chi2 = 0
         isos = self.fit_isotopomers[self.current_metabolite]
@@ -87,6 +126,9 @@ class IsotopomerAnalysis:
         if len(metabolite) == 0 or len(fit_isotopomers) == 0:
             return
 
+        use_hsqc = self.use_hsqc_multiplet_data
+        use_gcms = self.use_gcms_data
+        use_nmr1d = self.use_nmr1d_data
         self.current_experiment = exp_index
         self.current_metabolite = metabolite
         fit_parameters = np.ones(len(fit_isotopomers))
@@ -96,6 +138,10 @@ class IsotopomerAnalysis:
         self.set_fit_isotopomers(metabolite=metabolite, isotopomers=fit_isotopomers, percentages=fit_parameters)
         eval_parameters = optimize.minimize(self.fct_data, fit_parameters, method='Powell')
         e_pars = np.array(eval_parameters.x).tolist()
+        self.use_hsqc_multiplet_data = True
+        self.use_gcms_data = True
+        self.use_nmr1d_data = True
+        self.fct_data(e_pars)
         self.set_fit_isotopomers(metabolite=metabolite, isotopomers=fit_isotopomers, percentages=e_pars)
         self.fitted_isotopomers[metabolite][exp_index] = self.fit_isotopomers[metabolite]
         self.fitted_isotopomer_percentages[metabolite][exp_index] = self.isotopomer_percentages[metabolite]
@@ -111,6 +157,9 @@ class IsotopomerAnalysis:
 
         self.fitted_gcms_percentages[metabolite][exp_index] = self.gcms_percentages[metabolite]
         self.fitted_nmr1d_percentages[metabolite][exp_index] = self.nmr1d_percentages[metabolite]
+        self.use_hsqc_multiplet_data = use_hsqc
+        self.use_gcms_data = use_gcms
+        self.use_nmr1d_data = use_nmr1d
         return
     # end fit_data
 
