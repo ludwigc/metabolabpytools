@@ -19,7 +19,7 @@ class IsotopomerAnalysis:
         self.gcms_data = pd.DataFrame()
         self.lcms_data = pd.DataFrame()
         self.nmr1d_data = pd.DataFrame()
-        self.ver = '0.8.22'
+        self.ver = '0.9.23'
         self.nat_abundance = 1.07  # [%]
         self.use_hsqc_multiplet_data = True
         self.use_gcms_data = True
@@ -82,19 +82,23 @@ class IsotopomerAnalysis:
             index = 2
             for l in range(self.n_exps):
                 wb[k][f'A{int(index)}'] = str(l + 1)
-                for m in range(len(self.fitted_isotopomers[k][l])):
-                    wb[k][f'B{int(index + m)}'] = str(self.fitted_isotopomers[k][l][m])
-                    wb[k][f'C{int(index + m)}'] = str(f'{self.fitted_isotopomer_percentages[k][l][m]:4.2f}')
+                if k in self.fitted_isotopomers.keys():
+                    for m in range(len(self.fitted_isotopomers[k][l])):
+                        wb[k][f'B{int(index + m)}'] = str(self.fitted_isotopomers[k][l][m])
+                        wb[k][f'C{int(index + m)}'] = str(f'{self.fitted_isotopomer_percentages[k][l][m]:4.2f}')
 
-                for m in range(len(self.fitted_multiplets[k][l])):
-                    wb[k][f'D{int(index + m)}'] = str(self.fitted_multiplets[k][l][m])
-                    wb[k][f'E{int(index + m)}'] = str(f'{self.exp_multiplet_percentages[k][l][m]:4.2f}')
-                    wb[k][f'F{int(index + m)}'] = str(f'{self.fitted_multiplet_percentages[k][l][m]:4.2f}')
+                if k in self.fitted_multiplets.keys():
+                    for m in range(len(self.fitted_multiplets[k][l])):
+                        wb[k][f'D{int(index + m)}'] = str(self.fitted_multiplets[k][l][m])
+                        wb[k][f'E{int(index + m)}'] = str(f'{self.exp_multiplet_percentages[k][l][m]:4.2f}')
+                        wb[k][f'F{int(index + m)}'] = str(f'{self.fitted_multiplet_percentages[k][l][m]:4.2f}')
 
-                wb[k][f'G{int(index)}'] = str(np.round(np.array(self.exp_gcms[k][l])*100)/100)
-                wb[k][f'H{int(index)}'] = str(np.round(np.array(self.fitted_gcms_percentages[k][l])*100)/100)
-                wb[k][f'I{int(index)}'] = str(np.round(np.array(self.exp_nmr1d[k][l])*100)/100)
-                wb[k][f'J{int(index)}'] = str(np.round(np.array(self.fitted_nmr1d_percentages[k][l])*100)/100)
+                if k in self.exp_gcms.keys():
+                    wb[k][f'G{int(index)}'] = str(np.round(np.array(self.exp_gcms[k][l])*100)/100)
+                    wb[k][f'H{int(index)}'] = str(np.round(np.array(self.fitted_gcms_percentages[k][l])*100)/100)
+                if k in self.exp_nmr1d.keys():
+                    wb[k][f'I{int(index)}'] = str(np.round(np.array(self.exp_nmr1d[k][l])*100)/100)
+                    wb[k][f'J{int(index)}'] = str(np.round(np.array(self.fitted_nmr1d_percentages[k][l])*100)/100)
                 index += int(np.max(np.array([len(self.fitted_isotopomers[k][l]), len(self.fitted_multiplets[k][l]), 1.0])))
 
             wb.save(file_name)
@@ -138,10 +142,7 @@ class IsotopomerAnalysis:
         self.set_fit_isotopomers(metabolite=metabolite, isotopomers=fit_isotopomers, percentages=fit_parameters)
         eval_parameters = optimize.minimize(self.fct_data, fit_parameters, method='Powell')
         e_pars = np.array(eval_parameters.x).tolist()
-        self.use_hsqc_multiplet_data = True
-        self.use_gcms_data = True
-        self.use_nmr1d_data = True
-        self.fct_data(e_pars)
+        #self.fct_data(e_pars)
         self.set_fit_isotopomers(metabolite=metabolite, isotopomers=fit_isotopomers, percentages=e_pars)
         self.fitted_isotopomers[metabolite][exp_index] = self.fit_isotopomers[metabolite]
         self.fitted_isotopomer_percentages[metabolite][exp_index] = self.isotopomer_percentages[metabolite]
@@ -227,7 +228,7 @@ class IsotopomerAnalysis:
         self.hsqc_multiplets[metabolite][exp_index] = mm
         for k in range(len(qq)):
             qq[k] = list(np.array(qq[k]) * 100.0 / np.sum(np.array(qq[k])))
-            
+
         self.hsqc_multiplet_percentages[metabolite][exp_index] = qq
         mm2 = []
         for k in range(len(mm)):
@@ -242,6 +243,86 @@ class IsotopomerAnalysis:
         return
     # end set_fct_hsqc_data
 
+    def set_sim_hsqc_data(self, exp_index=0, metabolite=''):
+        if len(metabolite) == 0:
+            return
+        
+        n = self.nmr_isotopomers[metabolite]
+        p = self.nmr_isotopomer_percentages[metabolite]
+        nn = []
+        pp = []
+        num_carbons = len(self.hsqc[metabolite])
+        n_bonds = self.n_bonds[metabolite]
+        for k in range(num_carbons):
+            nn.append([])
+            pp.append([])
+            for l in range(len(n)):
+                if n[l][k] == 1:
+                    nn[k].append(n[l])
+                    pp[k].append(p[l])
+                    
+        for k in range(num_carbons):
+            min_idx = max(0, k - n_bonds)
+            max_idx = min(num_carbons, k + n_bonds + 1)
+            for l in range(len(nn[k])):
+                nnn = np.array(nn[k][l])
+                for a in range(0, min_idx):
+                    nnn[a] = 0
+                    
+                for b in range(max_idx, num_carbons):
+                    nnn[b] = 0
+                    
+                nn[k][l] = list(nnn)
+                
+        mm = []
+        qq = []
+        for k in range(num_carbons):
+            mm.append([])
+            qq.append([])
+            kk = -1
+            ppp = list.copy(pp[k])
+            nnn = list.copy(nn[k])
+            while len(nnn) > 0:
+                mm[k].append(nnn[0])
+                qq[k].append(ppp[0])
+                temp = list.copy(nnn[0])
+                del nnn[0]
+                del ppp[0]
+                while temp in nnn:
+                    kk += 1
+                    idx = nnn.index(temp)
+                    qq[k][kk] += ppp[idx]
+                    del nnn[idx]
+                    del ppp[idx]
+                    
+        self.hsqc_multiplets[metabolite][exp_index] = mm
+        for k in range(len(qq)):
+            qq[k] = list(np.array(qq[k]) * 100.0 / np.sum(np.array(qq[k])))
+            
+        self.hsqc_multiplet_percentages[metabolite][exp_index] = qq
+        mm2 = []
+        for k in range(len(mm)):
+            mm2.append([])
+            for l in range(len(mm[k])):
+                ll = list(np.where(np.array(mm[k][l]) == 1)[0] + 1)
+                ll.pop(ll.index(k + 1))
+                ll.insert(0, k+1)
+                mm2[k].append(ll)
+                
+        self.hsqc_multiplets2[metabolite][exp_index] = mm2
+        exp_multiplets = []
+        exp_multiplet_percentages = []
+        for k in range(len(self.hsqc[metabolite])):
+            if self.hsqc[metabolite][k] == 1:
+                for l in range(len(self.hsqc_multiplets2[metabolite][exp_index][k])):
+                    exp_multiplets.append(self.hsqc_multiplets2[metabolite][exp_index][k][l])
+                    exp_multiplet_percentages.append(self.hsqc_multiplet_percentages[metabolite][exp_index][k][l])
+
+        self.exp_multiplets[metabolite][exp_index] = exp_multiplets
+        self.exp_multiplet_percentages[metabolite][exp_index] = exp_multiplet_percentages
+        return
+    # end set_sim_hsqc_data
+    
     def fct_hsqc_data(self, exp_index=0, metabolite=''):
         if len(metabolite) == 0:
             return -1
@@ -285,6 +366,53 @@ class IsotopomerAnalysis:
         chi2 = perc.sum()
         return chi2
     # end fct_nmr1d_data
+
+    def init_metabolite(self, metabolite='', hsqc=[]):
+        if len(metabolite) == 0 or len(hsqc) == 0:
+            return
+        
+        self.__init__()
+        self.metabolites.append(metabolite)
+        self.fit_isotopomers[metabolite] = []
+        self.isotopomer_percentages[metabolite] = []
+        self.nmr_isotopomers[metabolite] = []
+        self.nmr_isotopomer_percentages[metabolite] = []
+        self.gcms_percentages[metabolite] = []
+        self.nmr1d_percentages[metabolite] = []
+        self.n_bonds[metabolite] = []
+        self.hsqc_multiplets[metabolite] = []
+        self.hsqc_multiplets2[metabolite] = []
+        self.hsqc_multiplet_percentages[metabolite] = []
+        self.fitted_isotopomers[metabolite] = []
+        self.fitted_isotopomer_percentages[metabolite] = []
+        self.fitted_multiplets[metabolite] = []
+        self.fitted_multiplet_percentages[metabolite] = []
+        self.fitted_gcms_percentages[metabolite] = []
+        self.fitted_nmr1d_percentages[metabolite] = []
+        self.exp_multiplets[metabolite] = []
+        self.exp_multiplet_percentages[metabolite] = []
+        self.exp_hsqc_isos[metabolite] = []
+        self.n_bonds[metabolite] = 1
+        self.hsqc_multiplets[metabolite] = []
+        self.hsqc_multiplets2[metabolite] = []
+        self.hsqc_multiplet_percentages[metabolite] = []
+        self.exp_multiplets[metabolite].append([])
+        self.exp_multiplet_percentages[metabolite].append([])
+        self.exp_hsqc_isos[metabolite].append([])
+        self.hsqc_multiplets[metabolite].append([])
+        self.hsqc_multiplets2[metabolite].append([])
+        self.hsqc_multiplet_percentages[metabolite].append([])
+        self.fitted_isotopomers[metabolite].append([])
+        self.fitted_isotopomer_percentages[metabolite].append([])
+        self.fitted_multiplets[metabolite].append([])
+        self.fitted_multiplet_percentages[metabolite].append([])
+        self.fitted_gcms_percentages[metabolite].append([])
+        self.fitted_nmr1d_percentages[metabolite].append([])
+        self.hsqc[metabolite] = hsqc
+        self.exp_gcms[metabolite] = []
+        self.exp_gcms[metabolite].append([])
+        self.n_exps = 1
+        return
 
     def metabolite(self, metabolite=''):
         if len(metabolite) == 0 or metabolite not in self.metabolites:
@@ -479,7 +607,7 @@ class IsotopomerAnalysis:
 
     def set_fit_isotopomers(self, metabolite='', isotopomers=[], percentages=[]):
         if len(metabolite) == 0 or metabolite not in self.metabolites or len(isotopomers) == 0 or len(percentages) == 0:
-            print('Usage:\nia.set_fit_isotopomers(metabolite="L-LacticAcid", isotopomers=[[0, 0, 1], [0, 1, 1]], percentages=[3, 5]')
+            print('Usage:\nself.set_fit_isotopomers(metabolite="L-LacticAcid", isotopomers=[[0, 0, 1], [0, 1, 1]], percentages=[3, 5]')
             return
 
         if len(isotopomers) != len(percentages):
@@ -564,13 +692,38 @@ class IsotopomerAnalysis:
 
 
         d_sums = np.array(d_sums)
-        gcms_data = list(np.zeros(len(self.nmr_multiplets[metabolite]['HSQC.0'][0].split()) + 1, dtype=int))
+        if metabolite in self.nmr_multiplets.keys():
+            gcms_data = list(np.zeros(len(self.nmr_multiplets[metabolite]['HSQC.0'][0].split()) + 1, dtype=int))
+        elif metabolite in self.gcms_data.keys():
+            gcms_data = list(np.zeros(len(self.gcms_data[metabolite]), dtype=int))
+        else:
+            gcms_data = list(np.zeros(len(self.hsqc[metabolite]) + 1, dtype=int))
+
         percentages = np.array(self.isotopomer_percentages[metabolite].copy())
         for k in range(len(gcms_data)):
             gcms_data[k] = percentages[np.where(d_sums == k)].sum()
 
         self.gcms_percentages[metabolite] = gcms_data.copy()
     # end set_gcms_isotopomers
+
+    def sim_hsqc_data(self, metabolite='', exp_index=0, isotopomers=[], percentages=[]):
+        if len(metabolite) == 0 or metabolite not in self.metabolites or len(isotopomers) == 0 or len(percentages) == 0:
+            return
+
+        self.set_fit_isotopomers(metabolite, isotopomers, percentages)
+        self.set_hsqc_isotopomers(metabolite)
+        # sim effect of read_hsqc_data
+        self.set_sim_hsqc_data(exp_index, metabolite)
+        return
+        # end sim_hsqc_data
+
+    def sim_gcms_data(self, metabolite='', exp_index=0):
+        if len(metabolite) == 0 or metabolite not in self.metabolites:
+            return
+
+        self.set_gcms_percentages(metabolite)
+        self.exp_gcms[metabolite][exp_index] = list(np.copy(self.gcms_percentages[metabolite]))
+    # end sim_gcms_data
 
     def set_nmr1d_percentages(self, metabolite=''):
         if len(metabolite) == 0 or metabolite not in self.metabolites:
@@ -582,3 +735,4 @@ class IsotopomerAnalysis:
 
         self.nmr1d_percentages[metabolite] = list(self.nmr1d_percentages[metabolite])
     # end set_nmr1d_isotopomers
+        
