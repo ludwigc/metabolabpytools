@@ -1,27 +1,16 @@
 import os
 import pandas as pd
 import numpy as np
-import random
-import scipy as sp
-import os
-import math
-import time
 from scipy import optimize
 import tensorflow as tf
 from openpyxl import Workbook
-from sklearn.preprocessing import StandardScaler
-from tensorflow.keras.layers import Dense, Activation, Lambda, BatchNormalization, Dropout
-from sklearn.model_selection import train_test_split, cross_val_score
+from tensorflow.keras.layers import Dense, Activation, Lambda, Dropout
+from sklearn.model_selection import train_test_split
 from tensorflow.keras.regularizers import l2
-from sklearn.metrics import mean_absolute_percentage_error
-from tensorflow.keras.optimizers import Adam, RMSprop, Adadelta, Adagrad, Adamax, Nadam, Ftrl, SGD
-from sklearn.model_selection import RandomizedSearchCV, KFold, StratifiedKFold
-from sklearn.base import BaseEstimator, RegressorMixin
+from tensorflow.keras.optimizers import Adam, RMSprop, Adadelta, Adagrad, Adamax
 from tensorflow.keras.models import Sequential
 import keras_tuner as kt
-from tensorflow.keras.callbacks import EarlyStopping, LearningRateScheduler
-from scikeras.wrappers import KerasClassifier
-from bayes_opt import BayesianOptimization
+from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.layers import LeakyReLU
 LeakyReLU = LeakyReLU(negative_slope=0.1)
 
@@ -767,6 +756,55 @@ class IsotopomerAnalysis:
 
 
 # Neural network addition - RA
+
+    def generate_isotopomer_percentages(self):
+        unlabelled_percentage = np.random.uniform(20, 80)  # Unlabelled percentage between 20% and 80%
+        remaining_percentage = 100 - unlabelled_percentage
+
+        # Determine which isotopomers are present with a 0.5% chance for each
+        isotopomer_presence = np.random.rand(7) < 0.5
+        present_isotopomers = np.sum(isotopomer_presence)
+
+        if present_isotopomers == 0:
+            # Ensure at least one isotopomer is present if all are zero
+            isotopomer_presence[np.random.randint(0, 7)] = True
+            present_isotopomers = 1
+
+        # Generate random percentages for the present isotopomers
+        random_values = np.random.rand(present_isotopomers)
+        random_percentages = (random_values / random_values.sum()) * remaining_percentage
+
+        # Initialize all isotopomer percentages to zero
+        isotopomer_percentages = [0] * 7
+        # Assign random percentages to the selected isotopomers
+        random_idx = 0
+        for i in range(7):
+            if isotopomer_presence[i]:
+                isotopomer_percentages[i] = random_percentages[random_idx]
+                random_idx += 1
+
+        # Combine unlabelled and other isotopomer percentages
+        percentages = [unlabelled_percentage] + isotopomer_percentages
+
+        return percentages
+
+    def add_noise(self, data, noise_level):
+        """Add Gaussian noise to the data."""
+        data = np.array(data)
+        noise = np.random.normal(0, noise_level, data.shape)
+        return data + noise
+
+    def add_noise_to_hsqc_gcms(self, metabolite, num_samples, hsqc_noise_level, gcms_noise_level):
+        for exp_index in range(num_samples):
+            # Add noise to HSQC data
+            self.exp_multiplet_percentages[metabolite][exp_index] = self.add_noise(
+                self.exp_multiplet_percentages[metabolite][exp_index], hsqc_noise_level
+            ).tolist()
+            # Add noise to GC-MS data
+            self.exp_gcms[metabolite][exp_index] = self.add_noise(
+                self.exp_gcms[metabolite][exp_index], gcms_noise_level
+            ).tolist()
+
     def get_training_data(self, metabolite='', exp_index=0):
         # Extract HSQC and GC-MS data
         hsqc_data = self.exp_multiplet_percentages[metabolite][exp_index]
@@ -780,11 +818,15 @@ class IsotopomerAnalysis:
         #print(features)
         return np.array(features).reshape(1, -1)
 
+    # End get training data
+
     def get_training_labels(self, metabolite='', exp_index=0, percentages=[], fit_isotopomers=None):
         # Extract the corresponding isotopomer distributions as labels
         labels = percentages[exp_index]
         #print(labels)
         return np.array(labels).reshape(1, -1)
+
+    # End get training labels
 
     def init_metabolite_multiple_samples(self, metabolite='', hsqc=[], num_samples=1000):
         if len(metabolite) == 0 or len(hsqc) == 0:
@@ -819,31 +861,7 @@ class IsotopomerAnalysis:
         self.n_exps = num_samples
         return
 
-    def gather_sample_data(self, metabolite='', num_samples=1000):
-        if len(metabolite) == 0 or metabolite not in self.metabolites:
-            print("Metabolite is not provided or not initialized")
-            return None
-
-        data = {
-            'Sample': [],
-          #  'Isotopomer Distribution': [],
-            'HSQC Data': [],
-            'GC-MS Data': [],
-          #  'Generated Isotopomer Percentages': []  # Ensure this is collected too
-        }
-
-        for exp_index in range(num_samples):
-            data['Sample'].append(exp_index)
-          #  data['Isotopomer Distribution'].append(self.isotopomer_percentages[metabolite][exp_index])
-            data['HSQC Data'].append(self.exp_multiplet_percentages[metabolite][exp_index])
-            data['GC-MS Data'].append(self.exp_gcms[metabolite][exp_index])
-          #  data['Generated Isotopomer Percentages'].append(
-             #  self.isotopomer_percentages[metabolite][exp_index])  # Correctly append generated percentages
-
-        df = pd.DataFrame(data)
-        return df
-
-    # end gather_sample_data
+    # End init metabolite multiple samples
 
     def set_fit_isotopomers_simple(self, metabolite='', isotopomers=[], percentages=[], exp_index=0):
         if len(metabolite) == 0 or metabolite not in self.metabolites or len(percentages) == 0 or len(isotopomers) == 0:
@@ -868,101 +886,6 @@ class IsotopomerAnalysis:
 
     # end set_fit_isotopomers_simple
 
-    #Accuracy adjustments 10/06
-
-    # def create_nn_model(self, input_dim, output_dim, l2_lambda=0.01):
-    #     # Define and compile the neural network model with L2 regularization
-    #     model = Sequential([
-    #         Dense(128, activation='relu', kernel_regularizer=l2(l2_lambda)),
-    #         Dense(128, activation='relu', kernel_regularizer=l2(l2_lambda)),
-    #         Dense(output_dim, activation='relu'),
-    #         Lambda(lambda x: 100 * x / tf.reduce_sum(x, axis=1, keepdims=True))  # Normalize outputs to sum to 100
-    #     ])
-    #     model.compile(optimizer='adam', loss='mean_squared_error')
-    #     return model
-    #
-    # def lr_scheduler(self, epoch, lr):
-    #     # Define the learning rate schedule
-    #     if epoch < 10:
-    #         return lr
-    #     else:
-    #         return lr * math.exp(-0.1)
-    #
-    # def fit_data_nn(self, metabolite='', fit_isotopomers=None, num_samples=1000, percentages=[]):
-    #     if len(metabolite) == 0 or fit_isotopomers is None:
-    #         print("Metabolite or isotopomers are not provided")
-    #         return
-    #
-    #     # Store the original state
-    #     use_hsqc = self.use_hsqc_multiplet_data
-    #     use_gcms = self.use_gcms_data
-    #     use_nmr1d = self.use_nmr1d_data
-    #
-    #     # Modify state if needed (example)
-    #     self.use_hsqc_multiplet_data = True
-    #     self.use_gcms_data = True
-    #     self.use_nmr1d_data = False
-    #
-    #     # Prepare training data and labels
-    #     X = []
-    #     y = []
-    #
-    #     for exp_index in range(num_samples):
-    #         self.current_experiment = exp_index
-    #         self.current_metabolite = metabolite
-    #
-    #         X_train = self.get_training_data(metabolite=metabolite, exp_index=exp_index)
-    #         y_train = self.get_training_labels(metabolite=metabolite, exp_index=exp_index,
-    #                                            fit_isotopomers=fit_isotopomers, percentages=percentages)
-    #
-    #         if X_train is None or y_train is None:
-    #             print(f"Training data or labels could not be retrieved for sample {exp_index}.")
-    #             continue
-    #
-    #         X.append(X_train)
-    #         y.append(y_train)
-    #
-    #     X = np.array(X).reshape(num_samples, -1)
-    #     y = np.array(y).reshape(num_samples, -1)
-    #
-    #     # Split data into training and validation sets
-    #     X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.1, random_state=42)
-    #
-    #     # Verify input and output dimensions
-    #     input_dim = X_train.shape[1]
-    #     output_dim = y_train.shape[1]
-    #
-    #     # Create and train the neural network model with L2 regularization
-    #     model = self.create_nn_model(input_dim=input_dim, output_dim=output_dim, l2_lambda=0.01)
-    #
-    #     # Early stopping and learning rate scheduler callbacks
-    #     early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
-    #     lr_scheduler_callback = LearningRateScheduler(self.lr_scheduler)
-    #
-    #     model.fit(X_train, y_train, epochs=100, batch_size=32, validation_data=(X_val, y_val),
-    #               callbacks=[early_stopping, lr_scheduler_callback])
-    #
-    #     # Predict the isotopomer percentages for the validation set
-    #     y_pred = model.predict(X_val)
-    #
-    #     # Access the isotopomer distribution for the test sample (Last sample in validation set)
-    #     test_sample_index = 99  # Index of the test sample in validation set
-    #     test_sample_pred = y_pred[test_sample_index]
-    #     test_sample_true = y_val[test_sample_index]
-    #
-    #     print(f'Test Sample True Isotopomer Distribution: {test_sample_true}')
-    #     print(f'Test Sample Predicted Isotopomer Distribution: {test_sample_pred}')
-    #
-    #     # Restore the original state
-    #     self.use_hsqc_multiplet_data = use_hsqc
-    #     self.use_gcms_data = use_gcms
-    #     self.use_nmr1d_data = use_nmr1d
-    #
-    #     return
-
-
-    # hyperparameter tuning
-
     def create_nn_model(self, hp, input_dim, output_dim):
         l2_lambda = hp.Float('l2_lambda', min_value=0.001, max_value=0.1, step=0.001)
         learning_rate = hp.Float('learning_rate', min_value=0.001, max_value=0.1, step=0.001)
@@ -984,12 +907,16 @@ class IsotopomerAnalysis:
         model.compile(optimizer=optimizer, loss='mean_squared_error')
         return model
 
+    # End create nn model
+
     def lr_scheduler(self, epoch, lr):
         # Define the learning rate schedule
         if epoch < 10:
             return lr
         else:
             return lr * math.exp(-0.1)
+
+    # End lr scheduler
 
     def fit_data_nn(self, metabolite='', fit_isotopomers=None, num_samples=1000, percentages=[]):
         if len(metabolite) == 0 or fit_isotopomers is None:
@@ -1035,7 +962,7 @@ class IsotopomerAnalysis:
         input_dim = X_train.shape[1]
         output_dim = y_train.shape[1]
 
-        # Initialize the tuner
+        # Initialize the hyper parameter tuner
         tuner = kt.RandomSearch(
             lambda hp: self.create_nn_model(hp, input_dim, output_dim),
             objective='val_loss',
@@ -1077,4 +1004,5 @@ class IsotopomerAnalysis:
 
         return
 
+    # End fit data nn
 
