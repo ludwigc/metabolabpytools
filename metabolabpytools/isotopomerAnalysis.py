@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import numpy as np
+import shutil
 from scipy import optimize
 import tensorflow as tf
 from openpyxl import Workbook
@@ -11,6 +12,7 @@ from tensorflow.keras.optimizers import Adam, RMSprop, Adadelta, Adagrad, Adamax
 from tensorflow.keras.models import Sequential
 import keras_tuner as kt
 from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.metrics import MeanAbsoluteError
 from tensorflow.keras.layers import LeakyReLU
 LeakyReLU = LeakyReLU(negative_slope=0.1)
 
@@ -58,6 +60,7 @@ class IsotopomerAnalysis:
         self.chi2 = 0
         self.current_metabolite = ''
         self.current_experiment = 0
+        self.results = []
         # end __init__
 
     def __str__(self):  # pragma: no cover
@@ -754,114 +757,118 @@ class IsotopomerAnalysis:
         self.nmr1d_percentages[metabolite] = list(self.nmr1d_percentages[metabolite])
     # end set_nmr1d_isotopomers
 
+# Neural Network Addition - RA
 
-# Neural network addition - RA
+    def generate_isotopomer_percentages(self, metabolite_type):
+        if metabolite_type == 'three-carbon':
+            unlabelled_percentage = np.random.uniform(20, 80)
+            remaining_percentage = 100 - unlabelled_percentage
 
-    def generate_isotopomer_percentages(self):
-        unlabelled_percentage = np.random.uniform(20, 80)  # Unlabelled percentage between 20% and 80%
-        remaining_percentage = 100 - unlabelled_percentage
+            isotopomer_presence = np.random.rand(7) < 0.5
+            present_isotopomers = np.sum(isotopomer_presence)
 
-        # Determine which isotopomers are present with a 0.5% chance for each
-        isotopomer_presence = np.random.rand(7) < 0.5
-        present_isotopomers = np.sum(isotopomer_presence)
+            if present_isotopomers == 0:
+                isotopomer_presence[np.random.randint(0, 7)] = True
+                present_isotopomers = 1
 
-        if present_isotopomers == 0:
-            # Ensure at least one isotopomer is present if all are zero
-            isotopomer_presence[np.random.randint(0, 7)] = True
-            present_isotopomers = 1
+            random_values = np.random.rand(present_isotopomers)
+            random_percentages = (random_values / random_values.sum()) * remaining_percentage
 
-        # Generate random percentages for the present isotopomers
-        random_values = np.random.rand(present_isotopomers)
-        random_percentages = (random_values / random_values.sum()) * remaining_percentage
+            isotopomer_percentages = [0] * 7
+            random_idx = 0
+            for i in range(7):
+                if isotopomer_presence[i]:
+                    isotopomer_percentages[i] = random_percentages[random_idx]
+                    random_idx += 1
 
-        # Initialize all isotopomer percentages to zero
-        isotopomer_percentages = [0] * 7
-        # Assign random percentages to the selected isotopomers
-        random_idx = 0
-        for i in range(7):
-            if isotopomer_presence[i]:
-                isotopomer_percentages[i] = random_percentages[random_idx]
-                random_idx += 1
+            percentages = [unlabelled_percentage] + isotopomer_percentages
 
-        # Combine unlabelled and other isotopomer percentages
-        percentages = [unlabelled_percentage] + isotopomer_percentages
+        elif metabolite_type == 'aspartate':
+            unlabelled_percentage = np.random.uniform(20, 80)
+            remaining_percentage = 100 - unlabelled_percentage
+
+            isotopomer_presence = np.random.rand(15) < 0.5
+            present_isotopomers = np.sum(isotopomer_presence)
+
+            if present_isotopomers == 0:
+                isotopomer_presence[np.random.randint(0, 15)] = True
+                present_isotopomers = 1
+
+            random_values = np.random.rand(present_isotopomers)
+            random_percentages = (random_values / random_values.sum()) * remaining_percentage
+
+            isotopomer_percentages = [0] * 15
+            random_idx = 0
+            for i in range(15):
+                if isotopomer_presence[i]:
+                    isotopomer_percentages[i] = random_percentages[random_idx]
+                    random_idx += 1
+
+            percentages = [unlabelled_percentage] + isotopomer_percentages
+
+        else:
+            raise ValueError("Unknown metabolite type")
 
         return percentages
 
     def add_noise(self, data, noise_level):
-        """Add Gaussian noise to the data."""
         data = np.array(data)
         noise = np.random.normal(0, noise_level, data.shape)
         return data + noise
 
     def add_noise_to_hsqc_gcms(self, metabolite, num_samples, hsqc_noise_level, gcms_noise_level):
         for exp_index in range(num_samples):
-            # Add noise to HSQC data
             self.exp_multiplet_percentages[metabolite][exp_index] = self.add_noise(
                 self.exp_multiplet_percentages[metabolite][exp_index], hsqc_noise_level
             ).tolist()
-            # Add noise to GC-MS data
             self.exp_gcms[metabolite][exp_index] = self.add_noise(
                 self.exp_gcms[metabolite][exp_index], gcms_noise_level
             ).tolist()
 
     def get_training_data(self, metabolite='', exp_index=0):
-        # Extract HSQC and GC-MS data
         hsqc_data = self.exp_multiplet_percentages[metabolite][exp_index]
         gcms_data = self.exp_gcms[metabolite][exp_index]
 
-        # Flatten the GC-MS data
         flattened_gcms = np.array(gcms_data).flatten()
-
-        # Combine the flattened HSQC and GC-MS data
         features = np.hstack([hsqc_data, flattened_gcms])
-        #print(features)
         return np.array(features).reshape(1, -1)
 
-    # End get training data
-
     def get_training_labels(self, metabolite='', exp_index=0, percentages=[], fit_isotopomers=None):
-        # Extract the corresponding isotopomer distributions as labels
         labels = percentages[exp_index]
-        #print(labels)
         return np.array(labels).reshape(1, -1)
 
-    # End get training labels
+    def init_metabolite_multiple_samples(self, metabolites=[], hsqc=[], num_samples=1000):
+        for metabolite in metabolites:
+            if len(metabolite) == 0 or len(hsqc) == 0:
+                continue
 
-    def init_metabolite_multiple_samples(self, metabolite='', hsqc=[], num_samples=1000):
-        if len(metabolite) == 0 or len(hsqc) == 0:
-            return
+            if metabolite not in self.metabolites:
+                self.metabolites.append(metabolite)
 
-        if metabolite not in self.metabolites:
-            self.metabolites.append(metabolite)
+            self.fit_isotopomers[metabolite] = []
+            self.isotopomer_percentages[metabolite] = [[] for _ in range(num_samples)]
+            self.nmr_isotopomers[metabolite] = []
+            self.nmr_isotopomer_percentages[metabolite] = []
+            self.gcms_percentages[metabolite] = []
+            self.nmr1d_percentages[metabolite] = []
+            self.n_bonds[metabolite] = 1
+            self.hsqc[metabolite] = hsqc
 
-        self.fit_isotopomers[metabolite] = []
-        self.isotopomer_percentages[metabolite] = [[] for _ in range(num_samples)]
-        self.nmr_isotopomers[metabolite] = []
-        self.nmr_isotopomer_percentages[metabolite] = []
-        self.gcms_percentages[metabolite] = []
-        self.nmr1d_percentages[metabolite] = []
-        self.n_bonds[metabolite] = 1
-        self.hsqc[metabolite] = hsqc
+            self.exp_multiplets[metabolite] = [[] for _ in range(num_samples)]
+            self.exp_multiplet_percentages[metabolite] = [[] for _ in range(num_samples)]
+            self.exp_gcms[metabolite] = [[] for _ in range(num_samples)]
+            self.exp_hsqc_isos[metabolite] = [[] for _ in range(num_samples)]
+            self.hsqc_multiplets[metabolite] = [[] for _ in range(num_samples)]
+            self.hsqc_multiplets2[metabolite] = [[] for _ in range(num_samples)]
+            self.hsqc_multiplet_percentages[metabolite] = [[] for _ in range(num_samples)]
+            self.fitted_isotopomers[metabolite] = [[] for _ in range(num_samples)]
+            self.fitted_isotopomer_percentages[metabolite] = [[] for _ in range(num_samples)]
+            self.fitted_multiplets[metabolite] = [[] for _ in range(num_samples)]
+            self.fitted_multiplet_percentages[metabolite] = [[] for _ in range(num_samples)]
+            self.fitted_gcms_percentages[metabolite] = [[] for _ in range(num_samples)]
+            self.fitted_nmr1d_percentages[metabolite] = [[] for _ in range(num_samples)]
 
-        self.exp_multiplets[metabolite] = [[] for _ in range(num_samples)]
-        self.exp_multiplet_percentages[metabolite] = [[] for _ in range(num_samples)]
-        self.exp_gcms[metabolite] = [[] for _ in range(num_samples)]
-        self.exp_hsqc_isos[metabolite] = [[] for _ in range(num_samples)]
-        self.hsqc_multiplets[metabolite] = [[] for _ in range(num_samples)]
-        self.hsqc_multiplets2[metabolite] = [[] for _ in range(num_samples)]
-        self.hsqc_multiplet_percentages[metabolite] = [[] for _ in range(num_samples)]
-        self.fitted_isotopomers[metabolite] = [[] for _ in range(num_samples)]
-        self.fitted_isotopomer_percentages[metabolite] = [[] for _ in range(num_samples)]
-        self.fitted_multiplets[metabolite] = [[] for _ in range(num_samples)]
-        self.fitted_multiplet_percentages[metabolite] = [[] for _ in range(num_samples)]
-        self.fitted_gcms_percentages[metabolite] = [[] for _ in range(num_samples)]
-        self.fitted_nmr1d_percentages[metabolite] = [[] for _ in range(num_samples)]
-
-        self.n_exps = num_samples
-        return
-
-    # End init metabolite multiple samples
+            self.n_exps = num_samples
 
     def set_fit_isotopomers_simple(self, metabolite='', isotopomers=[], percentages=[], exp_index=0):
         if len(metabolite) == 0 or metabolite not in self.metabolites or len(percentages) == 0 or len(isotopomers) == 0:
@@ -873,18 +880,11 @@ class IsotopomerAnalysis:
             print('Length of percentages vector does not match number of isotopomers')
             return
 
-        # Ensure isotopomer_percentages has enough sublists
         while len(self.isotopomer_percentages[metabolite]) <= exp_index:
             self.isotopomer_percentages[metabolite].append([])
 
-        #print(percentages)
-        # Directly assign percentages to the specific sample index
         self.isotopomer_percentages[metabolite][exp_index] = percentages
-
-        # Directly assign isotopomers without any additional checks
         self.fit_isotopomers[metabolite] = isotopomers
-
-    # end set_fit_isotopomers_simple
 
     def create_nn_model(self, hp, input_dim, output_dim):
         l2_lambda = hp.Float('l2_lambda', min_value=0.001, max_value=0.1, step=0.001)
@@ -900,40 +900,26 @@ class IsotopomerAnalysis:
             if dropout_rate > 0:
                 model.add(Dropout(dropout_rate))
         model.add(Dense(output_dim, activation='relu'))
-        model.add(
-            Lambda(lambda x: 100 * x / tf.reduce_sum(x, axis=1, keepdims=True)))  # Normalize outputs to sum to 100
+        model.add(Lambda(lambda x: 100 * x / tf.reduce_sum(x, axis=1, keepdims=True)))
 
         optimizer = Adam(learning_rate=learning_rate)
         model.compile(optimizer=optimizer, loss='mean_squared_error')
         return model
 
-    # End create nn model
-
-    def lr_scheduler(self, epoch, lr):
-        # Define the learning rate schedule
-        if epoch < 10:
-            return lr
-        else:
-            return lr * math.exp(-0.1)
-
-    # End lr scheduler
-
-    def fit_data_nn(self, metabolite='', fit_isotopomers=None, num_samples=1000, percentages=[]):
+    def fit_data_nn(self, metabolite='', fit_isotopomers=None, num_samples=1000, percentages=[], hsqc=None,
+                    tuner_project_name=''):
         if len(metabolite) == 0 or fit_isotopomers is None:
             print("Metabolite or isotopomers are not provided")
             return
 
-        # Store the original state
         use_hsqc = self.use_hsqc_multiplet_data
         use_gcms = self.use_gcms_data
         use_nmr1d = self.use_nmr1d_data
 
-        # Modify state if needed (example)
         self.use_hsqc_multiplet_data = True
         self.use_gcms_data = True
         self.use_nmr1d_data = False
 
-        # Prepare training data and labels
         X = []
         y = []
 
@@ -942,8 +928,7 @@ class IsotopomerAnalysis:
             self.current_metabolite = metabolite
 
             X_train = self.get_training_data(metabolite=metabolite, exp_index=exp_index)
-            y_train = self.get_training_labels(metabolite=metabolite, exp_index=exp_index,
-                                               fit_isotopomers=fit_isotopomers, percentages=percentages)
+            y_train = self.get_training_labels(metabolite=metabolite, exp_index=exp_index, percentages=percentages)
 
             if X_train is None or y_train is None:
                 print(f"Training data or labels could not be retrieved for sample {exp_index}.")
@@ -955,54 +940,60 @@ class IsotopomerAnalysis:
         X = np.array(X).reshape(num_samples, -1)
         y = np.array(y).reshape(num_samples, -1)
 
-        # Split data into training and validation sets
         X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.1, random_state=42)
 
-        # Verify input and output dimensions
         input_dim = X_train.shape[1]
         output_dim = y_train.shape[1]
 
-        # Initialize the hyper parameter tuner
+        tuner_dir = f'my_dir/{tuner_project_name}'
+        if os.path.exists(tuner_dir):
+            shutil.rmtree(tuner_dir)
+
         tuner = kt.RandomSearch(
             lambda hp: self.create_nn_model(hp, input_dim, output_dim),
             objective='val_loss',
             max_trials=200,
             executions_per_trial=1,
             directory='my_dir',
-            project_name='isotopomer_analysis'
+            project_name=tuner_project_name
         )
 
-        # Early stopping callback
         early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
 
-        # Search for the best hyperparameters
         tuner.search(X_train, y_train, epochs=100, validation_data=(X_val, y_val), callbacks=[early_stopping])
 
-        # Get the optimal hyperparameters
         best_hps = tuner.get_best_hyperparameters(num_trials=1)[0]
 
-        # Build the model with the optimal hyperparameters and train it
         model = self.create_nn_model(best_hps, input_dim, output_dim)
         model.fit(X_train, y_train, epochs=100, batch_size=32, validation_data=(X_val, y_val),
                   callbacks=[early_stopping])
 
-        # Predict the isotopomer percentages for the validation set
         y_pred = model.predict(X_val)
 
-        # Access the isotopomer distribution for the test sample (Last sample in validation set)
-        test_sample_index = 99  # Index of the test sample in validation set
-        test_sample_pred = y_pred[test_sample_index]
-        test_sample_true = y_val[test_sample_index]
+        mae_metric = MeanAbsoluteError()
+        mae_metric.update_state(y_val, y_pred)
+        mae = mae_metric.result().numpy()
 
-        print(f'Test Sample True Isotopomer Distribution: {test_sample_true}')
-        print(f'Test Sample Predicted Isotopomer Distribution: {test_sample_pred}')
+        self.results.append({
+            'Metabolite': metabolite,
+            'HSQC': hsqc,
+            'Best Hyperparameters': best_hps.values,
+            'Best Validation Loss': tuner.oracle.get_best_trials(num_trials=1)[0].score,
+            'Mean Absolute Percentage Error': mae
+        })
 
-        # Restore the original state
+        #     # Access the isotopomer distribution for the test sample (Last sample in validation set)
+        #     test_sample_index = 99  # Index of the test sample in validation set
+        #     test_sample_pred = y_pred[test_sample_index]
+        #     test_sample_true = y_val[test_sample_index]
+        #
+        #     print(f'Test Sample True Isotopomer Distribution: {test_sample_true}')
+        #     print(f'Test Sample Predicted Isotopomer Distribution: {test_sample_pred}')
+
         self.use_hsqc_multiplet_data = use_hsqc
         self.use_gcms_data = use_gcms
         self.use_nmr1d_data = use_nmr1d
 
-        return
-
-    # End fit data nn
-
+    def save_results(self, filename='results.xlsx'):
+        df = pd.DataFrame(self.results)
+        df.to_excel(filename, index=False)
