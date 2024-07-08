@@ -761,53 +761,37 @@ class IsotopomerAnalysis:
 
     def generate_isotopomer_percentages(self, metabolite_type):
         if metabolite_type == 'three-carbon':
-            unlabelled_percentage = np.random.uniform(20, 80)
-            remaining_percentage = 100 - unlabelled_percentage
-
-            isotopomer_presence = np.random.rand(7) < 0.5
-            present_isotopomers = np.sum(isotopomer_presence)
-
-            if present_isotopomers == 0:
-                isotopomer_presence[np.random.randint(0, 7)] = True
-                present_isotopomers = 1
-
-            random_values = np.random.rand(present_isotopomers)
-            random_percentages = (random_values / random_values.sum()) * remaining_percentage
-
-            isotopomer_percentages = [0] * 7
-            random_idx = 0
-            for i in range(7):
-                if isotopomer_presence[i]:
-                    isotopomer_percentages[i] = random_percentages[random_idx]
-                    random_idx += 1
-
-            percentages = [unlabelled_percentage] + isotopomer_percentages
-
-        elif metabolite_type == 'aspartate':
-            unlabelled_percentage = np.random.uniform(20, 80)
-            remaining_percentage = 100 - unlabelled_percentage
-
-            isotopomer_presence = np.random.rand(15) < 0.5
-            present_isotopomers = np.sum(isotopomer_presence)
-
-            if present_isotopomers == 0:
-                isotopomer_presence[np.random.randint(0, 15)] = True
-                present_isotopomers = 1
-
-            random_values = np.random.rand(present_isotopomers)
-            random_percentages = (random_values / random_values.sum()) * remaining_percentage
-
-            isotopomer_percentages = [0] * 15
-            random_idx = 0
-            for i in range(15):
-                if isotopomer_presence[i]:
-                    isotopomer_percentages[i] = random_percentages[random_idx]
-                    random_idx += 1
-
-            percentages = [unlabelled_percentage] + isotopomer_percentages
-
+            num_isotopomers = 7
+        elif metabolite_type == 'four_carbon':
+            num_isotopomers = 15
+        elif metabolite_type == 'five_carbon':
+            num_isotopomers = 31
+        elif metabolite_type == 'six_carbon':
+            num_isotopomers = 63
         else:
             raise ValueError("Unknown metabolite type")
+
+        unlabelled_percentage = np.random.uniform(20, 80)
+        remaining_percentage = 100 - unlabelled_percentage
+
+        isotopomer_presence = np.random.rand(num_isotopomers) < 0.5
+        present_isotopomers = np.sum(isotopomer_presence)
+
+        if present_isotopomers == 0:
+            isotopomer_presence[np.random.randint(0, num_isotopomers)] = True
+            present_isotopomers = 1
+
+        random_values = np.random.rand(present_isotopomers)
+        random_percentages = (random_values / random_values.sum()) * remaining_percentage
+
+        isotopomer_percentages = [0] * num_isotopomers
+        random_idx = 0
+        for i in range(num_isotopomers):
+            if isotopomer_presence[i]:
+                isotopomer_percentages[i] = random_percentages[random_idx]
+                random_idx += 1
+
+        percentages = [unlabelled_percentage] + isotopomer_percentages
 
         return percentages
 
@@ -982,13 +966,13 @@ class IsotopomerAnalysis:
             'Mean Absolute Percentage Error': mae
         })
 
-        #     # Access the isotopomer distribution for the test sample (Last sample in validation set)
-        #     test_sample_index = 99  # Index of the test sample in validation set
-        #     test_sample_pred = y_pred[test_sample_index]
-        #     test_sample_true = y_val[test_sample_index]
-        #
-        #     print(f'Test Sample True Isotopomer Distribution: {test_sample_true}')
-        #     print(f'Test Sample Predicted Isotopomer Distribution: {test_sample_pred}')
+        # Access the isotopomer distribution for the test sample (Last sample in validation set)
+        test_sample_index = 99  # Index of the test sample in validation set
+        test_sample_pred = y_pred[test_sample_index]
+        test_sample_true = y_val[test_sample_index]
+
+        print(f'Test Sample True Isotopomer Distribution: {test_sample_true}')
+        print(f'Test Sample Predicted Isotopomer Distribution: {test_sample_pred}')
 
         self.use_hsqc_multiplet_data = use_hsqc
         self.use_gcms_data = use_gcms
