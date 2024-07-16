@@ -981,3 +981,98 @@ class IsotopomerAnalysis:
     def save_results(self, filename='results.xlsx'):
         df = pd.DataFrame(self.results)
         df.to_excel(filename, index=False)
+
+    def set_sim_hsqc_data_special_case(self, exp_index=0, metabolite=''):
+        if len(metabolite) == 0:
+            return
+
+        n = self.nmr_isotopomers[metabolite]
+        p = self.nmr_isotopomer_percentages[metabolite]
+        nn = []
+        pp = []
+        num_carbons = len(self.hsqc[metabolite])
+        n_bonds = self.n_bonds[metabolite]
+        for k in range(num_carbons):
+            nn.append([])
+            pp.append([])
+            for l in range(len(n)):
+                if n[l][k] == 1:
+                    nn[k].append(n[l])
+                    pp[k].append(p[l])
+
+        for k in range(num_carbons):
+            min_idx = max(0, k - n_bonds)
+            max_idx = min(num_carbons, k + n_bonds + 1)
+            for l in range(len(nn[k])):
+                nnn = np.array(nn[k][l])
+                for a in range(0, min_idx):
+                    nnn[a] = 0
+
+                for b in range(max_idx, num_carbons):
+                    nnn[b] = 0
+
+                nn[k][l] = list(nnn)
+
+        mm = []
+        qq = []
+        for k in range(num_carbons):
+            mm.append([])
+            qq.append([])
+            kk = -1
+            ppp = list.copy(pp[k])
+            nnn = list.copy(nn[k])
+            while len(nnn) > 0:
+                mm[k].append(nnn[0])
+                qq[k].append(ppp[0])
+                temp = list.copy(nnn[0])
+                del nnn[0]
+                del ppp[0]
+                while temp in nnn:
+                    kk += 1
+                    idx = nnn.index(temp)
+                    qq[k][kk] += ppp[idx]
+                    del nnn[idx]
+                    del ppp[idx]
+
+        # Combine [2,3] and [3,4] percentages
+        for k in range(len(qq)):
+            if k == 1:  # 2nd position corresponds to [2,3] coupling
+                qq[k] = [qq[k][0] + qq[k + 1][0]]  # Combine with [3,4]
+                qq[k + 1] = [0]  # Set [3,4] to zero
+
+        self.hsqc_multiplets[metabolite][exp_index] = mm
+        for k in range(len(qq)):
+            qq[k] = list(np.array(qq[k]) * 100.0 / np.sum(np.array(qq[k])))
+
+        self.hsqc_multiplet_percentages[metabolite][exp_index] = qq
+        mm2 = []
+        for k in range(len(mm)):
+            mm2.append([])
+            for l in range(len(mm[k])):
+                ll = list(np.where(np.array(mm[k][l]) == 1)[0] + 1)
+                ll.pop(ll.index(k + 1))
+                ll.insert(0, k + 1)
+                mm2[k].append(ll)
+
+        self.hsqc_multiplets2[metabolite][exp_index] = mm2
+        exp_multiplets = []
+        exp_multiplet_percentages = []
+        for k in range(len(self.hsqc[metabolite])):
+            if self.hsqc[metabolite][k] == 1:
+                for l in range(len(self.hsqc_multiplets2[metabolite][exp_index][k])):
+                    exp_multiplets.append(self.hsqc_multiplets2[metabolite][exp_index][k][l])
+                    exp_multiplet_percentages.append(self.hsqc_multiplet_percentages[metabolite][exp_index][k][l])
+
+        self.exp_multiplets[metabolite][exp_index] = exp_multiplets
+        self.exp_multiplet_percentages[metabolite][exp_index] = exp_multiplet_percentages
+        return
+
+
+    def sim_hsqc_data_special_case(self, metabolite='', exp_index=0, isotopomers=[], percentages=[]):
+        if len(metabolite) == 0 or metabolite not in self.metabolites or len(isotopomers) == 0 or len(percentages) == 0:
+            return
+
+        self.set_fit_isotopomers_simple(metabolite, isotopomers, percentages)
+        self.set_hsqc_isotopomers(metabolite)
+        self.set_sim_hsqc_data_special_case(exp_index, metabolite)
+        return
