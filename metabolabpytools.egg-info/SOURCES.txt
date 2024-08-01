@@ -7,6 +7,7 @@ setup.py
 metabolabpytools/__init__.py
 metabolabpytools/analysis.py
 metabolabpytools/isotopomerAnalysis.py
+metabolabpytools/isotopomerAnalysis1.py
 metabolabpytools.egg-info/PKG-INFO
 metabolabpytools.egg-info/SOURCES.txt
 metabolabpytools.egg-info/dependency_links.txt

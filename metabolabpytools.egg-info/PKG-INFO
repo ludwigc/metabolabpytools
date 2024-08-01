@@ -16,6 +16,9 @@ Classifier: Topic :: Utilities
 Classifier: License :: OSI Approved :: GNU General Public License v3 (GPLv3)
 Classifier: Operating System :: OS Independent
 License-File: LICENSE
+Requires-Dist: numpy
+Requires-Dist: scipy
+Requires-Dist: pandas
 
 MetaboLabPy
 ============
