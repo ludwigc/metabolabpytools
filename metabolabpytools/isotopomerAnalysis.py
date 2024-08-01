@@ -2,18 +2,20 @@ import os
 import pandas as pd
 import numpy as np
 import shutil
-from scipy import optimize
 import tensorflow as tf
-from openpyxl import Workbook
-from tensorflow.keras.layers import Dense, Activation, Lambda, Dropout
+import keras.config
+from keras import Input
 from sklearn.model_selection import train_test_split
+from tensorflow.keras.layers import Dense, Lambda, Dropout
 from tensorflow.keras.regularizers import l2
-from tensorflow.keras.optimizers import Adam, RMSprop, Adadelta, Adagrad, Adamax
-from tensorflow.keras.models import Sequential
-import keras_tuner as kt
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.models import Sequential, load_model, model_from_json
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.metrics import MeanAbsoluteError
 from tensorflow.keras.layers import LeakyReLU
+import keras_tuner as kt
+import json
+
 LeakyReLU = LeakyReLU(negative_slope=0.1)
 
 class IsotopomerAnalysis:
@@ -813,6 +815,8 @@ class IsotopomerAnalysis:
         hsqc_data = self.exp_multiplet_percentages[metabolite][exp_index]
         gcms_data = self.exp_gcms[metabolite][exp_index]
 
+        print(hsqc_data, gcms_data)
+
         flattened_gcms = np.array(gcms_data).flatten()
         features = np.hstack([hsqc_data, flattened_gcms])
         return np.array(features).reshape(1, -1)
@@ -877,18 +881,24 @@ class IsotopomerAnalysis:
         num_layers = hp.Int('num_layers', min_value=2, max_value=4)
         dropout_rate = hp.Float('dropout_rate', min_value=0.0, max_value=0.5, step=0.1)
 
-        model = Sequential()
-        model.add(Dense(num_neurons, activation='relu', kernel_regularizer=l2(l2_lambda), input_dim=input_dim))
+        inputs = Input(shape=(input_dim,))
+        x = Dense(num_neurons, activation='relu', kernel_regularizer=l2(l2_lambda))(inputs)
+
         for _ in range(num_layers - 1):
-            model.add(Dense(num_neurons, activation='relu', kernel_regularizer=l2(l2_lambda)))
+            x = Dense(num_neurons, activation='relu', kernel_regularizer=l2(l2_lambda))(x)
             if dropout_rate > 0:
-                model.add(Dropout(dropout_rate))
-        model.add(Dense(output_dim, activation='relu'))
-        model.add(Lambda(lambda x: 100 * x / tf.reduce_sum(x, axis=1, keepdims=True)))
+                x = Dropout(dropout_rate)(x)
+
+        outputs = Dense(output_dim, activation='relu')(x)
+        outputs = Lambda(lambda x: 100 * x / tf.reduce_sum(x, axis=1, keepdims=True), output_shape=(output_dim,))(
+            outputs)
+
+        model = tf.keras.Model(inputs=inputs, outputs=outputs)
 
         optimizer = Adam(learning_rate=learning_rate)
         model.compile(optimizer=optimizer, loss='mean_squared_error')
         return model
+
 
     def fit_data_nn(self, metabolite='', fit_isotopomers=None, num_samples=1000, percentages=[], hsqc=None,
                     tuner_project_name=''):
@@ -907,6 +917,8 @@ class IsotopomerAnalysis:
         X = []
         y = []
 
+        print_data = True
+
         for exp_index in range(num_samples):
             self.current_experiment = exp_index
             self.current_metabolite = metabolite
@@ -921,10 +933,16 @@ class IsotopomerAnalysis:
             X.append(X_train)
             y.append(y_train)
 
+            if print_data:
+                print("First X_train data sample:", X_train)
+                print("First y_train data sample:", y_train)
+                print_data = False  # Only print for the first sample
+
         X = np.array(X).reshape(num_samples, -1)
         y = np.array(y).reshape(num_samples, -1)
 
         X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.1, random_state=42)
+
 
         input_dim = X_train.shape[1]
         output_dim = y_train.shape[1]
@@ -936,7 +954,7 @@ class IsotopomerAnalysis:
         tuner = kt.RandomSearch(
             lambda hp: self.create_nn_model(hp, input_dim, output_dim),
             objective='val_loss',
-            max_trials=200,
+            max_trials=5,
             executions_per_trial=1,
             directory='my_dir',
             project_name=tuner_project_name
@@ -966,17 +984,27 @@ class IsotopomerAnalysis:
             'Mean Absolute Percentage Error': mae
         })
 
-        # Access the isotopomer distribution for the test sample (Last sample in validation set)
-        test_sample_index = 99  # Index of the test sample in validation set
-        test_sample_pred = y_pred[test_sample_index]
-        test_sample_true = y_val[test_sample_index]
-
-        print(f'Test Sample True Isotopomer Distribution: {test_sample_true}')
-        print(f'Test Sample Predicted Isotopomer Distribution: {test_sample_pred}')
+        # Save best hyperparameters
+        best_hps_dict = {
+            'input_dim': input_dim,
+            'output_dim': output_dim,
+            'l2_lambda': best_hps.get('l2_lambda'),
+            'learning_rate': best_hps.get('learning_rate'),
+            'num_neurons': best_hps.get('num_neurons'),
+            'num_layers': best_hps.get('num_layers'),
+            'dropout_rate': best_hps.get('dropout_rate')
+        }
+        with open(f'{tuner_dir}/best_hyperparameters.json', 'w') as json_file:
+            json.dump(best_hps_dict, json_file)
 
         self.use_hsqc_multiplet_data = use_hsqc
         self.use_gcms_data = use_gcms
         self.use_nmr1d_data = use_nmr1d
+
+        # Save model weights
+        model.save_weights(f'{tuner_dir}/model.weights.h5')
+        model.save(f'{tuner_dir}/best_model.keras')
+
 
     def save_results(self, filename='results.xlsx'):
         df = pd.DataFrame(self.results)
@@ -1076,3 +1104,54 @@ class IsotopomerAnalysis:
         self.set_hsqc_isotopomers(metabolite)
         self.set_sim_hsqc_data_special_case(exp_index, metabolite)
         return
+
+    def load_best_model(self, hsqc_label):
+        hsqc_label = hsqc_label.replace(",", ", ")
+        keras.config.enable_unsafe_deserialization()
+
+        tuner_dir = f'C:/Users/raath/metabolabpytools/metabolabpytools/jupyter/my_dir/{hsqc_label}'
+        best_model_path = os.path.join(tuner_dir, 'best_model.keras')
+        weights_path = os.path.join(tuner_dir, 'model.weights.h5')
+        hyperparameters_path = os.path.join(tuner_dir, 'best_hyperparameters.json')
+
+        if os.path.exists(best_model_path) and os.path.exists(weights_path) and os.path.exists(hyperparameters_path):
+            with open(hyperparameters_path, 'r') as json_file:
+                best_hps = json.load(json_file)
+
+            model = self.create_nn_model_from_hps(best_hps)
+            model.load_weights(weights_path)
+            return model
+        else:
+            raise ValueError(f"No saved model found for HSQC label: {hsqc_label}")
+
+    def create_nn_model_from_hps(self, hps):
+        l2_lambda = hps['l2_lambda']
+        learning_rate = hps['learning_rate']
+        num_neurons = hps['num_neurons']
+        num_layers = hps['num_layers']
+        dropout_rate = hps['dropout_rate']
+        input_dim = hps['input_dim']
+        output_dim = hps['output_dim']
+
+        inputs = Input(shape=(input_dim,))
+        x = Dense(num_neurons, activation='relu', kernel_regularizer=l2(l2_lambda))(inputs)
+
+        for _ in range(num_layers - 1):
+            x = Dense(num_neurons, activation='relu', kernel_regularizer=l2(l2_lambda))(x)
+            if dropout_rate > 0:
+                x = Dropout(dropout_rate)(x)
+
+        outputs = Dense(output_dim, activation='relu')(x)
+        outputs = Lambda(lambda x: 100 * x / tf.reduce_sum(x, axis=1, keepdims=True), output_shape=(output_dim,))(
+            outputs)
+
+        model = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+        optimizer = Adam(learning_rate=learning_rate)
+        model.compile(optimizer=optimizer, loss='mean_squared_error')
+        return model
+
+
+
+
+
