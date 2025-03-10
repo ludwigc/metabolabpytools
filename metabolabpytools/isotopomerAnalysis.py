@@ -7,7 +7,18 @@ import math
 import time
 from scipy import optimize
 from openpyxl import Workbook  # pragma: no cover
-import itertools
+import tensorflow as tf
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras import layers, models
+from keras_tuner import BayesianOptimization
+import numpy as np
+import pandas as pd
+import os
+from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+from collections import defaultdict  # Add this import statement
+
+
 
 
 class IsotopomerAnalysis:
@@ -188,6 +199,7 @@ class IsotopomerAnalysis:
         pp = []
         num_carbons = len(self.hsqc[metabolite])
         n_bonds = self.n_bonds[metabolite]
+
         for k in range(num_carbons):
             nn.append([])
             pp.append([])
@@ -225,10 +237,13 @@ class IsotopomerAnalysis:
                 del ppp[0]
                 while temp in nnn:
                     kk += 1
+                    if kk >= len(qq[k]):
+                        qq[k].append(0)  # Ensure qq[k] is long enough
                     idx = nnn.index(temp)
                     qq[k][kk] += ppp[idx]
                     del nnn[idx]
                     del ppp[idx]
+
 
         self.hsqc_multiplets[metabolite][exp_index] = mm
         for k in range(len(qq)):
@@ -285,6 +300,7 @@ class IsotopomerAnalysis:
         for k in range(num_carbons):
             mm.append([])
             qq.append([])
+            kk = -1
             ppp = list.copy(pp[k])
             nnn = list.copy(nn[k])
             while len(nnn) > 0:
@@ -294,17 +310,18 @@ class IsotopomerAnalysis:
                 del nnn[0]
                 del ppp[0]
                 while temp in nnn:
+                    kk += 1
                     idx = nnn.index(temp)
-                    qq[k][-1] += ppp[idx]
+                    # Ensure that qq[k] has enough elements
+                    if kk >= len(qq[k]):
+                        qq[k].append(0)  # Append a zero if the list is not long enough
+                    qq[k][kk] += ppp[idx]
                     del nnn[idx]
                     del ppp[idx]
 
         self.hsqc_multiplets[metabolite][exp_index] = mm
         for k in range(len(qq)):
-            total_percentage = np.sum(np.array(qq[k]))
-            if total_percentage == 0:
-                total_percentage = 1  # To avoid division by zero
-            qq[k] = float(list(np.array(qq[k]) * 100.0 / total_percentage))
+            qq[k] = list(np.array(qq[k]) * 100.0 / np.sum(np.array(qq[k])))
 
         self.hsqc_multiplet_percentages[metabolite][exp_index] = qq
         mm2 = []
@@ -325,8 +342,8 @@ class IsotopomerAnalysis:
                     exp_multiplets.append(self.hsqc_multiplets2[metabolite][exp_index][k][l])
                     exp_multiplet_percentages.append(self.hsqc_multiplet_percentages[metabolite][exp_index][k][l])
 
-        self.exp_multiplets[metabolite][exp_index] = [int(xx) for xx in exp_multiplets]
-        self.exp_multiplet_percentages[metabolite][exp_index] = [float(xx) for xx in exp_multiplet_percentages]
+        self.exp_multiplets[metabolite][exp_index] = exp_multiplets
+        self.exp_multiplet_percentages[metabolite][exp_index] = exp_multiplet_percentages
         return
 
     # end set_sim_hsqc_data
@@ -382,6 +399,7 @@ class IsotopomerAnalysis:
         if len(metabolite) == 0 or len(hsqc) == 0:
             return
 
+        self.__init__()
         self.metabolites.append(metabolite)
         self.fit_isotopomers[metabolite] = []
         self.isotopomer_percentages[metabolite] = []
@@ -620,7 +638,6 @@ class IsotopomerAnalysis:
 
     # end reset_fit_isotopomers
 
-    # Set fit isotopomers
     def set_fit_isotopomers(self, metabolite='', isotopomers=[], percentages=[]):
         if len(metabolite) == 0 or metabolite not in self.metabolites or len(isotopomers) == 0 or len(percentages) == 0:
             print(
@@ -631,8 +648,37 @@ class IsotopomerAnalysis:
             print('length of percentages vector does not match number of isotopomers')
             return
 
-        self.fit_isotopomers[metabolite] = isotopomers
-        self.isotopomer_percentages[metabolite] = percentages
+        self.reset_fit_isotopomers(metabolite)
+        for k in range(len(isotopomers)):
+            self.fit_isotopomers[metabolite].append(isotopomers[k])
+            self.isotopomer_percentages[metabolite].append(percentages[k])
+
+        zero_isotopomer = list(np.zeros(len(self.fit_isotopomers[metabolite][0]), dtype=int))
+        if zero_isotopomer not in self.fit_isotopomers[metabolite]:
+            self.fit_isotopomers[metabolite].append(zero_isotopomer)
+            self.isotopomer_percentages[metabolite].append(0.0)
+
+        p_sum = sum(self.isotopomer_percentages[metabolite])
+        idx = self.fit_isotopomers[metabolite].index(zero_isotopomer)
+        if p_sum < 100.0:
+            self.isotopomer_percentages[metabolite][idx] = 100.0 - p_sum + self.isotopomer_percentages[metabolite][idx]
+
+        p_sum = sum(self.isotopomer_percentages[metabolite])
+        for k in range(len(self.isotopomer_percentages[metabolite])):
+            self.isotopomer_percentages[metabolite][k] *= 100.0 / p_sum
+
+        new_isotopomer_list = []
+        new_percentages_list = []
+        new_isotopomer_list.append(self.fit_isotopomers[metabolite][idx])
+        new_percentages_list.append(self.isotopomer_percentages[metabolite][idx])
+        self.fit_isotopomers[metabolite].pop(idx)
+        self.isotopomer_percentages[metabolite].pop(idx)
+        while len(self.fit_isotopomers[metabolite]) > 0:
+            new_isotopomer_list.append(self.fit_isotopomers[metabolite].pop(0))
+            new_percentages_list.append(self.isotopomer_percentages[metabolite].pop(0))
+
+        self.fit_isotopomers[metabolite] = new_isotopomer_list.copy()
+        self.isotopomer_percentages[metabolite] = new_percentages_list.copy()
 
     # end set_fit_isotopomers
 
@@ -726,113 +772,640 @@ class IsotopomerAnalysis:
                                                   self.nmr_isotopomer_percentages[metabolite][k]
 
         self.nmr1d_percentages[metabolite] = list(self.nmr1d_percentages[metabolite])
-    # end set_nmr1d_isotopomers
+        # end set_nmr1d_isotopomers
 
-    # Generate all possible isotopomers for n carbons
-    def generate_isotopomers(self, num_carbons):
-        return list(itertools.product([0, 1], repeat=num_carbons))
+    pass
 
-    # Simulate data
-    def simulate_and_save_data(self, num_samples, num_carbons, metabolite, save_dir='data_sim'):
-        import os
-        from openpyxl import Workbook
 
-        all_isotopomers = self.generate_isotopomers(num_carbons)
-        num_isotopomers = len(all_isotopomers)
+class IsotopomerAnalysisNN(IsotopomerAnalysis):
 
-        simulated_hsqc = []
-        simulated_gcms = []
-        isotopomer_distributions = []
+    def __init__(self):
+        super().__init__()
 
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
+    def simulate_hsqc_gcms(self, distributions, hsqc_vector):
+        all_isotopomer_data = []
+        all_hsqc_data = []
+        all_gcms_data = []
 
-        wb = Workbook()
-        sheet = wb.active
-        sheet.title = metabolite
-        sheet.append(
-            ["Sample", "Isotopomer Labels", "Isotopomer Distribution", "HSQC Multiplet", "HSQC Multiplet %", "GC-MS %"])
+        for i, distribution in enumerate(distributions):
+            isotopomers = distribution['isotopomers']
+            percentages = distribution['percentages']
 
-        for sample_idx in range(num_samples):
-            # Ensure the unlabelled isotopomer percentage is above 20%
-            unlabelled_percentage = np.random.uniform(20, 80)
-            remaining_percentage = 100 - unlabelled_percentage
+            # Use existing logic to simulate HSQC and GC-MS data
+            metabolite_name = f'TestMetabolite_{i + 1}'
+            self.init_metabolite(metabolite_name, hsqc=hsqc_vector)  # HSQC vector defined externally
 
-            # Initialize distribution with unlabelled isotopomer
-            distribution = [unlabelled_percentage] + [0] * (num_isotopomers - 1)
+            # Simulate the isotopomer data
+            self.sim_hsqc_data(metabolite=metabolite_name, exp_index=0, isotopomers=isotopomers,
+                               percentages=percentages)
+            self.sim_gcms_data(metabolite=metabolite_name, exp_index=0)
 
-            # Determine which other isotopomers are observed
-            observed_indices = [0] + [i for i in range(1, num_isotopomers) if np.random.rand() > 0.5]
+            # Retrieve simulated data
+            hsqc_multiplets = self.exp_multiplets[metabolite_name][0]
+            hsqc_percentages = self.exp_multiplet_percentages[metabolite_name][0]
+            gcms_percentages = self.exp_gcms[metabolite_name][0]
 
-            # If all isotopomers lose the coin flip, set unlabelled percentage to 0
-            if len(observed_indices) == 1:
-                unlabelled_percentage = 0
-                distribution[0] = unlabelled_percentage
+            # Create separate DataFrames for each sample
+            isotopomer_df = pd.DataFrame({
+                'isotopomer': [str(iso) for iso in isotopomers],
+                'isotopomer%': percentages,
+                'sample': i + 1
+            })
 
-            # Generate random percentages for observed isotopomers
-            if len(observed_indices) > 1:
-                random_percentages = np.random.rand(len(observed_indices) - 1)
-                random_percentages /= random_percentages.sum()
-                random_percentages *= remaining_percentage
-                for idx, iso_index in enumerate(observed_indices[1:], start=1):
-                    distribution[iso_index] = random_percentages[idx - 1]
+            hsqc_df = pd.DataFrame({
+                'hsqc_multiplet': [str(hsqc) for hsqc in hsqc_multiplets],
+                'hsqc%': hsqc_percentages,
+                'sample': i + 1
+            })
 
-            # Simulate HSQC and GC-MS data
-            self.set_fit_isotopomers(metabolite, [list(iso) for iso in all_isotopomers], distribution)
-            self.set_hsqc_isotopomers(metabolite)
-            self.set_sim_hsqc_data(0, metabolite)
-            self.set_gcms_percentages(metabolite)
+            gcms_df = pd.DataFrame({
+                'GCMS%': gcms_percentages,
+                'sample': i + 1
+            })
 
-            # Ensure HSQC multiplet percentages are consistent in shape
-            hsqc_multiplet_percentage = self.hsqc_multiplet_percentages[metabolite][0]
-            hsqc_flat = []
-            for item in hsqc_multiplet_percentage:
-                if isinstance(item, list):
-                    hsqc_flat.extend(item)
-                else:
-                    hsqc_flat.append(item)
+            # Append to the list of all data
+            all_isotopomer_data.append(isotopomer_df)
+            all_hsqc_data.append(hsqc_df)
+            all_gcms_data.append(gcms_df)
 
-            simulated_hsqc.append(np.array(hsqc_flat))
-            simulated_gcms.append(np.array(self.gcms_percentages[metabolite]))
-            isotopomer_distributions.append(distribution)
+        # Concatenate all DataFrames into a single DataFrame for each type
+        combined_isotopomer_data = pd.concat(all_isotopomer_data, ignore_index=True)
+        combined_hsqc_data = pd.concat(all_hsqc_data, ignore_index=True)
+        combined_gcms_data = pd.concat(all_gcms_data, ignore_index=True)
 
-            # Convert HSQC multiplet to a more readable format
-            readable_multiplets = []
-            for multiplet in self.hsqc_multiplets2[metabolite][0]:
-                readable_multiplets.append(multiplet)
+        return combined_isotopomer_data, combined_hsqc_data, combined_gcms_data
 
-            # Save each sample's data to the spreadsheet
-            sheet.append([
-                sample_idx + 1,
-                str([list(iso) for iso in all_isotopomers]),
-                str(distribution),
-                str(readable_multiplets),
-                str(self.hsqc_multiplet_percentages[metabolite][0]),
-                str(self.gcms_percentages[metabolite])
-            ])
+    def save_simulation_data(self, combined_isotopomer_data, combined_hsqc_data, combined_gcms_data, hsqc_vector):
+        # Ensure the directory exists
+        os.makedirs('sim_data', exist_ok=True)
 
-        wb.save(os.path.join(save_dir, f'{metabolite}_simulation_results.xlsx'))
+        # Convert the HSQC vector to a string for the file name
+        hsqc_vector_str = ''.join(map(str, hsqc_vector))
+        file_name = f'sim_data/sim_{hsqc_vector_str}.xlsx'
 
-        return np.array(simulated_hsqc), np.array(simulated_gcms), np.array(isotopomer_distributions)
+        # Save to Excel with multiple sheets
+        with pd.ExcelWriter(file_name) as writer:
+            combined_isotopomer_data.to_excel(writer, sheet_name='Isotopomer_Data', index=False)
+            combined_hsqc_data.to_excel(writer, sheet_name='HSQC_Data', index=False)
+            combined_gcms_data.to_excel(writer, sheet_name='GCMS_Data', index=False)
 
-        # End Simulate data
+        print(f"Data successfully saved to {file_name}")
 
-    @staticmethod
-    def get_observable_multiplets(hsqc_vector):
-        observable_carbons = [i + 1 for i, val in enumerate(hsqc_vector) if val == 1]
-        multiplets = []
 
-        # Generate all possible combinations of observable carbons
-        for r in range(1, len(observable_carbons) + 1):
-            combinations = itertools.combinations(observable_carbons, r)
-            for combo in combinations:
-                multiplets.append(combo)
 
-                # Consider neighbor and remote correlations
-                for neighbor in range(1, len(hsqc_vector) + 1):
-                    if neighbor not in combo:
-                        new_combo = tuple(sorted(combo + (neighbor,)))
-                        if new_combo not in multiplets:
-                            multiplets.append(new_combo)
+    def generate_isotopomer_distributions(self, n_distributions=10000, n_carbons=3):
+        distributions = []
+        for _ in range(n_distributions):
+            isotopomers = []
+            percentages = []
 
-        return multiplets
+            # Generate all possible isotopomer patterns for n_carbons
+            possible_isotopomers = [list(map(int, bin(i)[2:].zfill(n_carbons))) for i in range(2 ** n_carbons)]
+
+            # Coin flip to determine inclusion for each isotopomer, always include [0, 0, 0]
+            for isotopomer in possible_isotopomers:
+                if np.random.rand() > 0.5 or isotopomer == [0] * n_carbons:
+                    isotopomers.append(isotopomer)
+
+            # Assign the unlabeled isotopomer percentage within 10-30%
+            unlabeled_percentage = np.random.uniform(30, 100)
+            percentages.append(unlabeled_percentage)
+
+            # Calculate the remaining percentage
+            remaining_percentage = 100 - unlabeled_percentage
+
+            # Generate random proportions for the remaining isotopomers
+            num_other_isotopomers = len(isotopomers) - 1  # Excluding the unlabeled one
+            if num_other_isotopomers > 0:
+                random_proportions = np.random.rand(num_other_isotopomers)
+                random_proportions /= random_proportions.sum()  # Normalize to sum to 1
+
+                # Assign the remaining percentage based on the random proportions
+                for proportion in random_proportions:
+                    percentages.append(proportion * remaining_percentage)
+
+            # Final check to ensure percentages sum exactly to 100
+            percentages = [p * (100 / sum(percentages)) for p in percentages]
+
+            distributions.append({'isotopomers': isotopomers, 'percentages': percentages})
+
+        return distributions
+
+
+    def load_spreadsheet_by_hsqc_vector(self, hsqc_vector):
+        # Convert HSQC vector to string
+        hsqc_vector_str = ''.join(map(str, hsqc_vector))
+        file_name = f'sim_data/sim_{hsqc_vector_str}.xlsx'
+
+        if os.path.exists(file_name):
+            with pd.ExcelFile(file_name) as xls:
+                isotopomer_data = pd.read_excel(xls, sheet_name='Isotopomer_Data')
+                hsqc_data = pd.read_excel(xls, sheet_name='HSQC_Data')
+                gcms_data = pd.read_excel(xls, sheet_name='GCMS_Data')
+            return isotopomer_data, hsqc_data, gcms_data
+        else:
+            raise FileNotFoundError(f"No spreadsheet found for HSQC vector {hsqc_vector}")
+
+    def collate_y_labels(self, isotopomer_data, n_carbons):
+        # Define the 8 possible isotopomers for a 3-carbon metabolite
+        possible_isotopomers = [list(map(int, bin(i)[2:].zfill(n_carbons))) for i in range(2 ** n_carbons)]
+
+        # Convert the possible isotopomers to strings to match the data format
+        possible_isotopomers_str = [str(iso) for iso in possible_isotopomers]
+
+        Y = []
+
+        for sample in isotopomer_data['sample'].unique():
+            # Initialize Y_sample with zeros
+            Y_sample = np.zeros(len(possible_isotopomers_str))
+
+            # Filter data for the current sample
+            sample_data = isotopomer_data[isotopomer_data['sample'] == sample]
+
+            # Populate Y_sample
+            for i, iso_str in enumerate(possible_isotopomers_str):
+                match = sample_data[sample_data['isotopomer'] == iso_str]
+                if not match.empty:
+                    Y_sample[i] = match['isotopomer%'].values[0]
+
+            Y.append(Y_sample)
+
+        return np.array(Y)
+
+    def generate_possible_hsqc_multiplets(self, hsqc_vector):
+        active_positions = [i + 1 for i, x in enumerate(hsqc_vector) if x == 1]
+        possible_multiplets = []
+        max_position = len(hsqc_vector)
+
+        # Define possible multiplets for each position, ensuring connections do not exceed max_position
+        all_multiplets = {
+            1: [[1], [1, 2]] if max_position >= 2 else [[1]],
+            2: [[2], [2, 1], [2, 3], [2, 1, 3]] if max_position >= 3 else [[2], [2, 1]],
+            3: [[3], [3, 4], [3, 2], [3, 2, 4]] if max_position >= 4 else [[3], [3, 2]],
+            4: [[4], [4, 5], [4, 3], [4, 3, 5]] if max_position >= 5 else [[4], [4, 3]],
+            5: [[5], [5, 6], [5, 4], [5, 4, 6]] if max_position >= 6 else [[5], [5, 4]],
+            6: [[6], [6, 5]] if max_position >= 6 else [[6]],
+            # Extend if needed for more carbons
+        }
+
+        # Loop through active positions and gather their possible multiplets
+        for pos in active_positions:
+            if pos in all_multiplets:
+                possible_multiplets.extend(all_multiplets[pos])
+
+        return possible_multiplets
+
+    def collate_x_labels_with_noise(self, hsqc_data, gcms_data, all_possible_hsqc_multiplets, hsqc_noise_level=0.025,
+                                    gcms_noise_level=0.075):
+        X = []
+
+        for sample in hsqc_data['sample'].unique():
+            # Filter data for the current sample and create copies to avoid SettingWithCopyWarning
+            sample_hsqc_data = hsqc_data[hsqc_data['sample'] == sample].copy()
+            sample_gcms_data = gcms_data[gcms_data['sample'] == sample].copy()
+
+            # Add noise to HSQC data
+            sample_hsqc_data.loc[:, 'hsqc%'] += np.random.normal(0, hsqc_noise_level, sample_hsqc_data['hsqc%'].shape)
+
+            # Initialize a dictionary to hold hsqc percentages, filling with zeros initially
+            hsqc_dict = {str(multiplet): 0 for multiplet in all_possible_hsqc_multiplets}
+
+            # Fill in the actual hsqc percentages from the sample data
+            for _, row in sample_hsqc_data.iterrows():
+                hsqc_dict[str(row['hsqc_multiplet'])] = row['hsqc%']
+
+            # Extract hsqc percentages in the order of all_possible_hsqc_multiplets
+            hsqc_percentages_ordered = [hsqc_dict[str(multiplet)] for multiplet in all_possible_hsqc_multiplets]
+
+            # Add noise to GC-MS data
+            sample_gcms_data.loc[:, 'GCMS%'] += np.random.normal(0, gcms_noise_level, sample_gcms_data['GCMS%'].shape)
+
+            # Combine HSQC multiplet percentages and GC-MS percentages
+            X_sample = np.hstack([hsqc_percentages_ordered, sample_gcms_data['GCMS%'].values])
+
+            X.append(X_sample)
+
+        # Convert list to array
+        return np.array(X)
+
+    def collate_x_labels_without_noise(self, hsqc_data, gcms_data, all_possible_hsqc_multiplets):
+        X = []
+
+        for sample in hsqc_data['sample'].unique():
+            # Filter data for the current sample and create copies to avoid SettingWithCopyWarning
+            sample_hsqc_data = hsqc_data[hsqc_data['sample'] == sample].copy()
+            sample_gcms_data = gcms_data[gcms_data['sample'] == sample].copy()
+
+            # Initialize a dictionary to hold hsqc percentages, filling with zeros initially
+            hsqc_dict = {str(multiplet): 0 for multiplet in all_possible_hsqc_multiplets}
+
+            # Fill in the actual hsqc percentages from the sample data
+            for _, row in sample_hsqc_data.iterrows():
+                hsqc_dict[str(row['hsqc_multiplet'])] = row['hsqc%']
+
+            # Extract hsqc percentages in the order of all_possible_hsqc_multiplets
+            hsqc_percentages_ordered = [hsqc_dict[str(multiplet)] for multiplet in all_possible_hsqc_multiplets]
+
+            # Combine HSQC multiplet percentages and GC-MS percentages without adding noise
+            X_sample = np.hstack([hsqc_percentages_ordered, sample_gcms_data['GCMS%'].values])
+
+            X.append(X_sample)
+
+        # Convert list to array
+        return np.array(X)
+
+    def create_dynamic_nn_model(self, input_dim, output_dim):
+        model = models.Sequential()
+        model.add(layers.Input(shape=(input_dim,)))  # Define input shape using Input layer
+        model.add(layers.Dense(128, activation='relu'))
+        model.add(layers.Dense(64, activation='relu'))
+        model.add(layers.Dense(32, activation='relu'))
+        # Use ReLU activation in the output layer to ensure non-negative outputs
+        model.add(layers.Dense(output_dim, activation='relu'))
+        return model
+
+    def train_neural_network(self, X_noisy, Y, plot_filename="trainingloss0110.png", epochs=100, batch_size=32, validation_split=0.2):
+        input_dim = X_noisy.shape[1]  # Number of features in X
+        output_dim = Y.shape[1]  # Number of isotopomers in Y
+
+        # Create the model
+        model = self.create_dynamic_nn_model(input_dim, output_dim)
+
+        # Compile the model
+        model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mae'])
+
+        # Display the model architecture
+        model.summary()
+
+        # Split the data into training and validation sets
+        X_train, X_val, Y_train, Y_val = train_test_split(X_noisy, Y, test_size=validation_split, random_state=42)
+
+        # Train the model
+        history = model.fit(X_train, Y_train, epochs=epochs, batch_size=batch_size, validation_data=(X_val, Y_val))
+
+       # self.plot_and_save_training_history(history, plot_filename, "Training and Validation Loss, L-AsparticAcid [0, 1, 1, 0]")
+
+        # Evaluate the model on the validation set
+        val_loss, val_mae = model.evaluate(X_val, Y_val)
+        print(f"Validation Loss: {val_loss}, Validation MAE: {val_mae}")
+
+        # Make predictions
+        predictions = model.predict(X_val)
+
+        # Example: Comparing predictions with actual Y values
+        for i in range(5):
+            print(f"Predicted: {predictions[i]}, Actual: {Y_val[i]}")
+
+        return model, history
+
+    def tune_model(self, X, Y, hsqc_vector, plot_filename="TUNEDtrainingloss0110.png"):
+        input_dim = X.shape[1]
+        output_dim = Y.shape[1]
+
+        hypermodel = self.MetaboliteHyperModel(input_dim, output_dim)
+
+        tuner = BayesianOptimization(
+            hypermodel.build,
+            objective="val_loss",
+            max_trials=100,
+            executions_per_trial=1,
+            directory="tuning_dir",
+            project_name=f"metabolite_tuning_{'_'.join(map(str, hsqc_vector))}"
+        )
+
+        tuner.search_space_summary()
+
+        early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+
+        tuner.search(X, Y, epochs=100, validation_split=0.2, verbose=1, callbacks=[early_stopping])
+
+        tuner.results_summary()
+
+        # Save the best model for this specific HSQC vector
+        best_model = tuner.get_best_models(num_models=1)[0]
+
+        # Split the data into training and validation sets
+        X_train, X_val, Y_train, Y_val = train_test_split(X, Y, test_size=0.2, random_state=42)
+
+        # history = best_model.fit(X_train, Y_train, epochs=100, validation_data=(X_val, Y_val), verbose=1,
+        #                          callbacks=[early_stopping])
+        #
+        # self.plot_and_save_training_history(history, plot_filename,
+        #                                     "Tuned Model: Training and Validation Loss")
+
+        # Evaluate the best model on the validation set
+        val_loss, val_mae = best_model.evaluate(X_val, Y_val)
+        print(f"Validation Loss: {val_loss}, Validation MAE: {val_mae}")
+
+        # Save the best model and its summary
+        self.save_model(best_model, hsqc_vector)
+        self.save_model_summary(best_model, val_loss, val_mae, tuner, hsqc_vector)
+
+        # Perform Monte Carlo Dropout predictions after hyperparameter tuning
+        mean_pred, std_dev_pred = self.mc_dropout_predict(best_model, X_val, n_iter=100)
+
+        # Example: Comparing normalized predictions with actual Y values
+        for i in range(5):
+            print(f"Sample {i+1} - Predicted Mean: {mean_pred[i]}, Standard Deviation: {std_dev_pred[i]}")
+
+
+
+        return best_model, X_val, Y_val, mean_pred, std_dev_pred
+
+    class NormalizationLayer(layers.Layer):
+        def call(self, inputs):
+            # Normalize the inputs to sum to 1
+            normalized = tf.math.divide_no_nan(inputs, tf.reduce_sum(inputs, axis=-1, keepdims=True))
+            # Scale to sum to 100
+            return normalized * 100
+
+    class MetaboliteHyperModel:
+        def __init__(self, input_dim, output_dim):
+            self.input_dim = input_dim
+            self.output_dim = output_dim
+
+        def build(self, hp):
+            model = models.Sequential()
+            model.add(layers.Input(shape=(self.input_dim,)))
+            for i in range(hp.Int('num_layers', 1, 6)):
+                model.add(layers.Dense(
+                    units=hp.Int(f'units_{i}', min_value=32, max_value=512, step=32, default=64),
+                    activation='relu',
+                    kernel_regularizer=tf.keras.regularizers.L2(hp.Float('l2_lambda', 1e-5, 1e-2, sampling='log'))
+                ))
+                model.add(layers.Dropout(rate=hp.Float('dropout_rate', 0.1, 0.5, step=0.05)))
+            model.add(layers.Dense(self.output_dim, activation='relu'))
+            model.add(IsotopomerAnalysisNN.NormalizationLayer())  # Add the custom normalization layer
+            model.compile(
+                optimizer=tf.keras.optimizers.Adam(
+                    learning_rate=hp.Float('learning_rate', 1e-4, 1e-2, sampling='log', default=0.001)),
+                loss='mean_squared_error',
+                metrics=['mae']
+            )
+            return model
+
+    def generate_model_filename(self, hsqc_vector):
+        hsqc_str = '_'.join(map(str, hsqc_vector))
+        filename = f"model_hsqc_{hsqc_str}.keras"
+        return filename
+
+    def save_model(self, model, hsqc_vector, directory="saved_models"):
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        filename = self.generate_model_filename(hsqc_vector)
+        model.save(os.path.join(directory, filename))
+        print(f"Model saved as {filename} in {directory}")
+
+    def save_model_summary(self, model, val_loss, val_mae, tuner, hsqc_vector, directory="model_summaries"):
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+        hyperparameters = tuner.get_best_hyperparameters(1)[0]
+        summary_data = {
+            'Model Name': [self.generate_model_filename(hsqc_vector)],
+            'MSE': [val_loss],
+            'MAE': [val_mae],
+            'num_layers': [hyperparameters.get('num_layers')],
+            'learning_rate': [hyperparameters.get('learning_rate')],
+            'l2_lambda': [hyperparameters.get('l2_lambda')],
+            'dropout_rate': [hyperparameters.get('dropout_rate')]
+        }
+
+        summary_df = pd.DataFrame(summary_data)
+        summary_filename = os.path.join(directory, f"model_summary_{self.generate_model_filename(hsqc_vector)}.csv")
+        summary_df.to_csv(summary_filename, index=False)
+        print(f"Model summary saved as {summary_filename}")
+
+    # New method to load data
+    def load_hsqc_and_gcms_data(self, hsqc_data_file, gcms_data_file):
+        """Loads HSQC and GC-MS data from provided file paths."""
+        self.read_hsqc_multiplets(hsqc_data_file)
+        self.read_gcms_data(gcms_data_file)
+        print("HSQC and GC-MS data loaded successfully.")
+
+    # New method to inspect HSQC and GC-MS data
+    def inspect_metabolite_data(self, metabolite_name):
+        """Inspects HSQC and GC-MS data for a given metabolite."""
+        if metabolite_name in self.exp_multiplets:
+            print(f"HSQC Multiplets for {metabolite_name}:")
+            for exp_idx, multiplets in enumerate(self.exp_multiplets[metabolite_name]):
+                print(f"Experiment {exp_idx + 1}: {multiplets}")
+
+            print(f"\nHSQC Multiplet Percentages for {metabolite_name}:")
+            for exp_idx, percentages in enumerate(self.exp_multiplet_percentages[metabolite_name]):
+                print(f"Experiment {exp_idx + 1}: {percentages}")
+
+            print(f"\nGC-MS Percentages for {metabolite_name}:")
+            for exp_idx, gcms_percentages in enumerate(self.exp_gcms[metabolite_name]):
+                print(f"Experiment {exp_idx + 1}: {gcms_percentages}")
+        else:
+            print(f"No data found for metabolite {metabolite_name}")
+
+    def create_feature_vectors(self, metabolite_name):
+        """Combines HSQC and GC-MS data into feature vectors for a given metabolite, handling duplicate multiplets."""
+        if metabolite_name not in self.exp_multiplets:
+            print(f"No data found for metabolite {metabolite_name}")
+            return None
+
+        X_real_data = []
+
+        # Iterate over each experiment
+        for exp_idx in range(self.n_exps):
+            # Create a dictionary to accumulate percentages for duplicate multiplets
+            hsqc_dict = defaultdict(list)
+
+            # Get the HSQC multiplets and their percentages for the current experiment
+            hsqc_multiplets = self.exp_multiplets[metabolite_name][exp_idx]
+            hsqc_percentages = self.exp_multiplet_percentages[metabolite_name][exp_idx]
+
+            # Fill the dictionary with the multiplet as key and percentages as values
+            for multiplet, percentage in zip(hsqc_multiplets, hsqc_percentages):
+                hsqc_dict[str(multiplet)].append(percentage)
+
+            # Average the percentages for any duplicate multiplets
+            averaged_percentages = [np.mean(hsqc_dict[multiplet]) for multiplet in hsqc_dict]
+
+            # Get the GC-MS percentages for the current experiment
+            gcms_percentages = self.exp_gcms[metabolite_name][exp_idx]
+
+            # Combine averaged HSQC percentages and GC-MS data into a single feature vector
+            X_sample = np.hstack([averaged_percentages, gcms_percentages])
+
+            # Append the feature vector to the list
+            X_real_data.append(X_sample)
+
+        # Convert the list to a numpy array
+        X_real_data = np.array(X_real_data)
+
+        return X_real_data
+
+    def load_model_and_predict(self, model_path, X_real_data, n_carbons, n_iter=1000):
+        """Loads a trained model, makes predictions on real data with Monte Carlo Dropout, and simulates HSQC/GC-MS data."""
+
+        @tf.keras.utils.register_keras_serializable()
+        class NormalizationLayer(tf.keras.layers.Layer):
+            def call(self, inputs):
+                normalized = tf.math.divide_no_nan(inputs, tf.reduce_sum(inputs, axis=-1, keepdims=True))
+                return normalized * 100
+
+        # Load the trained model with custom objects
+        best_model = tf.keras.models.load_model(
+            model_path,
+            custom_objects={'NormalizationLayer': NormalizationLayer}
+        )
+
+        # Define a function to run the model with training=True
+        def mc_dropout_predict(model, X, n_iter=1000):
+            predictions = []
+            for _ in range(n_iter):
+                predictions.append(model(X, training=True))  # Directly call the model with training=True
+            predictions = np.array(predictions)
+            return np.mean(predictions, axis=0), np.std(predictions, axis=0)
+
+        # Obtain mean and standard deviation using Monte Carlo Dropout
+        mean_predictions, std_dev_predictions = mc_dropout_predict(best_model, X_real_data, n_iter=n_iter)
+
+        print("Mean Predictions:", mean_predictions)
+        print("Standard Deviation of Predictions:", std_dev_predictions)
+
+        # Convert mean predictions into isotopomer distributions
+        predicted_distributions = []
+        possible_isotopomers = [list(map(int, bin(i)[2:].zfill(n_carbons))) for i in range(2 ** n_carbons)]
+
+        for prediction in mean_predictions:
+            # Filter out isotopomers with zero percentages
+            filtered_isotopomers = []
+            filtered_percentages = []
+            for iso, perc in zip(possible_isotopomers, prediction):
+                if perc > 0:
+                    filtered_isotopomers.append(iso)
+                    filtered_percentages.append(perc)
+            predicted_distributions.append({
+                'isotopomers': filtered_isotopomers,
+                'percentages': filtered_percentages
+            })
+
+        return mean_predictions, std_dev_predictions, predicted_distributions
+
+    def simulate_from_predictions(self, predicted_distributions, hsqc_vector):
+        """Simulates HSQC and GC-MS data from predicted distributions."""
+        predicted_hsqc_data, predicted_gcms_data = [], []
+
+        all_possible_multiplets = self.generate_possible_hsqc_multiplets(hsqc_vector)
+
+        for distribution in predicted_distributions:
+            self.init_metabolite('PredictedMetabolite', hsqc_vector)
+            self.sim_hsqc_data(metabolite='PredictedMetabolite', exp_index=0, isotopomers=distribution['isotopomers'],
+                               percentages=distribution['percentages'])
+            self.sim_gcms_data(metabolite='PredictedMetabolite', exp_index=0)
+
+            hsqc_multiplets = self.exp_multiplets['PredictedMetabolite'][0]
+            hsqc_percentages = self.exp_multiplet_percentages['PredictedMetabolite'][0]
+            gcms_percentages = self.exp_gcms['PredictedMetabolite'][0]
+
+            # Ensure all possible HSQC multiplets are represented
+            hsqc_dict = {str(multiplet): 0 for multiplet in all_possible_multiplets}
+            for multiplet, perc in zip(hsqc_multiplets, hsqc_percentages):
+                hsqc_dict[str(multiplet)] = perc
+
+            uniform_hsqc_percentages = [hsqc_dict[str(multiplet)] for multiplet in all_possible_multiplets]
+
+            predicted_hsqc_data.append({
+                'multiplets': all_possible_multiplets,
+                'percentages': uniform_hsqc_percentages
+            })
+            predicted_gcms_data.append(gcms_percentages)
+
+        return predicted_hsqc_data, predicted_gcms_data
+
+
+    def mc_dropout_predict(self, model, X, n_iter=1000):
+
+        predictions = []
+
+        for _ in range(n_iter):
+            # Ensure dropout is active during prediction
+            pred = model(X, training=True)  # Pass training=True directly to the model
+            predictions.append(pred)
+
+        predictions = np.array(predictions)
+        mean_prediction = np.mean(predictions, axis=0)
+        std_dev_prediction = np.std(predictions, axis=0)
+
+        return mean_prediction, std_dev_prediction
+
+    def combine_hsqc_gcms(self, predicted_hsqc_data, predicted_gcms_data):
+        combined_vector = []
+        for hsqc, gcms in zip(predicted_hsqc_data, predicted_gcms_data):
+            combined_vector.append(np.hstack([hsqc['percentages'], gcms]))
+        return np.array(combined_vector)
+
+    def save_results_summary(self, X_real_data, predicted_distributions, std_dev_predictions,
+                             predicted_hsqc_data, predicted_gcms_data, hsqc_vector):
+        # Collect results in a dictionary format
+        results_data = {
+            "Sample": [],
+            "Isotopomers": [],
+            "Predicted Isotopomer Distribution": [],
+            "Standard Deviation": [],
+            "HSQC Multiplets": [],
+            "Real HSQC %": [],
+            "Back Calculated Sim HSQC %": [],
+            "Real GC-MS %": [],
+            "Back Calculated Sim GC-MS %": [],
+        }
+
+        # Determine correct length to split HSQC and GC-MS data
+        gcms_length = len(hsqc_vector) + 1  # Adding 1 for the unlabelled carbon
+        slice_length = len(X_real_data[0]) - gcms_length
+        np.set_printoptions(suppress=True, precision=3)
+
+        # Capture the data
+        for i, (pred_dist, std_dev, hsqc, gcms, back_hsqc, back_gcms) in enumerate(zip(
+                predicted_distributions, std_dev_predictions, predicted_hsqc_data,
+                predicted_gcms_data, X_real_data[:, :slice_length], X_real_data[:, slice_length:]
+        )):
+            results_data["Sample"].append(i + 1)
+            results_data["Isotopomers"].append(pred_dist['isotopomers'])
+            results_data["Predicted Isotopomer Distribution"].append(np.round(pred_dist['percentages'], 3))
+            results_data["Standard Deviation"].append(np.round(std_dev, 3))
+            results_data["HSQC Multiplets"].append(hsqc['multiplets'])
+            results_data["Real HSQC %"].append(np.round(back_hsqc, 3))  # Correctly placing the back-calculated data
+            results_data["Back Calculated Sim HSQC %"].append(
+                np.round(hsqc['percentages'], 3))  # Correctly placing the real data
+            results_data["Real GC-MS %"].append(np.round(back_gcms, 3))  # Correctly placing the back-calculated data
+            results_data["Back Calculated Sim GC-MS %"].append(np.round(gcms, 3))  # Correctly placing the real data
+
+        # Convert the dictionary to a DataFrame
+        results_df = pd.DataFrame(results_data)
+
+        # Define the directory and ensure it exists
+        results_directory = "nn_analysis_results"
+        if not os.path.exists(results_directory):
+            os.makedirs(results_directory)
+
+        # Convert HSQC vector to string for the filename
+        hsqc_vector_str = "_".join(map(str, hsqc_vector))
+        results_filename = f"results_summary_hsqc_{hsqc_vector_str}.xlsx"
+        results_filepath = os.path.join(results_directory, results_filename)
+
+        # Save the results to an Excel file
+        results_df.to_excel(results_filepath, index=False)
+        print(f"Results successfully saved to {results_filepath}")
+
+    import matplotlib.pyplot as plt
+
+    # Plotting training history with improvements
+    def plot_and_save_training_history(self, history, filename, title):
+        plt.figure(figsize=(10, 6))
+        plt.plot(history.history['loss'], label='Training Loss', color='blue', linewidth=2)
+        plt.plot(history.history['val_loss'], label='Validation Loss', color='orange', linestyle='--', linewidth=2)
+        plt.xlabel('Epochs', fontsize=14)
+        plt.ylabel('Loss', fontsize=14)
+        plt.title(title, fontsize=16)
+        plt.legend(fontsize=12)
+        plt.grid(True)
+        plt.savefig(filename, dpi=300)  # Save the figure as an image file
+        plt.show()
+
+
