@@ -1067,8 +1067,8 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
         tuner = BayesianOptimization(
             hypermodel.build,
             objective="val_loss",
-            max_trials=100,
-            executions_per_trial=1,
+            max_trials=200,
+            executions_per_trial=5,
             directory="tuning_dir",
             project_name=f"metabolite_tuning_{'_'.join(map(str, hsqc_vector))}"
         )
@@ -1102,7 +1102,7 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
         self.save_model_summary(best_model, val_loss, val_mae, tuner, hsqc_vector)
 
         # Perform Monte Carlo Dropout predictions after hyperparameter tuning
-        mean_pred, std_dev_pred = self.mc_dropout_predict(best_model, X_val, n_iter=100)
+        mean_pred, std_dev_pred = self.mc_dropout_predict(best_model, X_val, n_iter=10000)
 
         # Example: Comparing normalized predictions with actual Y values
         for i in range(5):
@@ -1239,7 +1239,7 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
 
         return X_real_data
 
-    def load_model_and_predict(self, model_path, X_real_data, n_carbons, n_iter=1000):
+    def load_model_and_predict(self, model_path, X_real_data, n_carbons, n_iter=10000):
         """Loads a trained model, makes predictions on real data with Monte Carlo Dropout, and simulates HSQC/GC-MS data."""
 
         @tf.keras.utils.register_keras_serializable()
@@ -1255,7 +1255,7 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
         )
 
         # Define a function to run the model with training=True
-        def mc_dropout_predict(model, X, n_iter=1000):
+        def mc_dropout_predict(model, X, n_iter=10000):
             predictions = []
             for _ in range(n_iter):
                 predictions.append(model(X, training=True))  # Directly call the model with training=True
@@ -1319,7 +1319,7 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
         return predicted_hsqc_data, predicted_gcms_data
 
 
-    def mc_dropout_predict(self, model, X, n_iter=1000):
+    def mc_dropout_predict(self, model, X, n_iter=10000):
 
         predictions = []
 
