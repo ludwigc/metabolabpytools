@@ -293,7 +293,22 @@ class IsotopomerAnalysis:
                 for b in range(max_idx, num_carbons):
                     nnn[b] = 0
 
-                nn[k][l] = list(nnn)
+                nn[k][l] = nnn.tolist()
+
+        nnn = []
+        ppp = []
+        for k in range(len(nn)):
+            nnn.append([])
+            ppp.append([])
+            for l in range(len(nn[k])):
+                if nn[k][l] in nnn[k]:
+                    ppp[k][nnn[k].index(nn[k][l])] += pp[k][l]
+                else:
+                    nnn[k].append(nn[k][l])
+                    ppp[k].append(pp[k][l])
+
+        nn = nnn
+        pp = ppp
 
         mm = []
         qq = []
@@ -321,14 +336,14 @@ class IsotopomerAnalysis:
 
         self.hsqc_multiplets[metabolite][exp_index] = mm
         for k in range(len(qq)):
-            qq[k] = list(np.array(qq[k]) * 100.0 / np.sum(np.array(qq[k])))
+            qq[k] = (np.array(qq[k]) * 100.0 / np.sum(np.array(qq[k]))).tolist()
 
         self.hsqc_multiplet_percentages[metabolite][exp_index] = qq
         mm2 = []
         for k in range(len(mm)):
             mm2.append([])
             for l in range(len(mm[k])):
-                ll = list(np.where(np.array(mm[k][l]) == 1)[0] + 1)
+                ll = (np.where(np.array(mm[k][l]) == 1)[0] + 1).tolist()
                 ll.pop(ll.index(k + 1))
                 ll.insert(0, k + 1)
                 mm2[k].append(ll)
@@ -653,7 +668,7 @@ class IsotopomerAnalysis:
             self.fit_isotopomers[metabolite].append(isotopomers[k])
             self.isotopomer_percentages[metabolite].append(percentages[k])
 
-        zero_isotopomer = list(np.zeros(len(self.fit_isotopomers[metabolite][0]), dtype=int))
+        zero_isotopomer = np.zeros(len(self.fit_isotopomers[metabolite][0]), dtype=int).tolist()
         if zero_isotopomer not in self.fit_isotopomers[metabolite]:
             self.fit_isotopomers[metabolite].append(zero_isotopomer)
             self.isotopomer_percentages[metabolite].append(0.0)
@@ -728,11 +743,11 @@ class IsotopomerAnalysis:
 
         d_sums = np.array(d_sums)
         if metabolite in self.nmr_multiplets.keys():
-            gcms_data = list(np.zeros(len(self.nmr_multiplets[metabolite]['HSQC.0'][0].split()) + 1, dtype=int))
+            gcms_data = np.zeros(len(self.nmr_multiplets[metabolite]['HSQC.0'][0].split()) + 1, dtype=int).tolist()
         elif metabolite in self.gcms_data.keys():
-            gcms_data = list(np.zeros(len(self.gcms_data[metabolite]), dtype=int))
+            gcms_data = np.zeros(len(self.gcms_data[metabolite]), dtype=int).tolist()
         else:
-            gcms_data = list(np.zeros(len(self.hsqc[metabolite]) + 1, dtype=int))
+            gcms_data = np.zeros(len(self.hsqc[metabolite]) + 1, dtype=int).tolist()
 
         percentages = np.array(self.isotopomer_percentages[metabolite].copy())
         for k in range(len(gcms_data)):
@@ -758,7 +773,7 @@ class IsotopomerAnalysis:
             return
 
         self.set_gcms_percentages(metabolite)
-        self.exp_gcms[metabolite][exp_index] = list(np.copy(self.gcms_percentages[metabolite]))
+        self.exp_gcms[metabolite][exp_index] = np.copy(self.gcms_percentages[metabolite]).tolist()
 
     # end sim_gcms_data
 
@@ -771,7 +786,7 @@ class IsotopomerAnalysis:
             self.nmr1d_percentages[metabolite] += np.array(self.nmr_isotopomers[metabolite][k]) * \
                                                   self.nmr_isotopomer_percentages[metabolite][k]
 
-        self.nmr1d_percentages[metabolite] = list(self.nmr1d_percentages[metabolite])
+        self.nmr1d_percentages[metabolite] = self.nmr1d_percentages[metabolite].tolist()
         # end set_nmr1d_isotopomers
 
     pass
@@ -860,7 +875,7 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
             percentages = []
 
             # Generate all possible isotopomer patterns for n_carbons
-            possible_isotopomers = [list(map(int, bin(i)[2:].zfill(n_carbons))) for i in range(2 ** n_carbons)]
+            possible_isotopomers = [map(int, bin(i)[2:].zfill(n_carbons)).tolist() for i in range(2 ** n_carbons)]
 
             # Coin flip to determine inclusion for each isotopomer, always include [0, 0, 0]
             for isotopomer in possible_isotopomers:
@@ -908,7 +923,7 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
 
     def collate_y_labels(self, isotopomer_data, n_carbons):
         # Define the 8 possible isotopomers for a 3-carbon metabolite
-        possible_isotopomers = [list(map(int, bin(i)[2:].zfill(n_carbons))) for i in range(2 ** n_carbons)]
+        possible_isotopomers = [map(int, bin(i)[2:].zfill(n_carbons)).tolist() for i in range(2 ** n_carbons)]
 
         # Convert the possible isotopomers to strings to match the data format
         possible_isotopomers_str = [str(iso) for iso in possible_isotopomers]
@@ -1270,7 +1285,7 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
 
         # Convert mean predictions into isotopomer distributions
         predicted_distributions = []
-        possible_isotopomers = [list(map(int, bin(i)[2:].zfill(n_carbons))) for i in range(2 ** n_carbons)]
+        possible_isotopomers = [map(int, bin(i)[2:].zfill(n_carbons)).tolist() for i in range(2 ** n_carbons)]
 
         for prediction in mean_predictions:
             # Filter out isotopomers with zero percentages
