@@ -875,7 +875,7 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
             percentages = []
 
             # Generate all possible isotopomer patterns for n_carbons
-            possible_isotopomers = [map(int, bin(i)[2:].zfill(n_carbons)).tolist() for i in range(2 ** n_carbons)]
+            possible_isotopomers = [list(map(int, bin(i)[2:].zfill(n_carbons))) for i in range(2 ** n_carbons)]
 
             # Coin flip to determine inclusion for each isotopomer, always include [0, 0, 0]
             for isotopomer in possible_isotopomers:
@@ -923,7 +923,7 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
 
     def collate_y_labels(self, isotopomer_data, n_carbons):
         # Define the 8 possible isotopomers for a 3-carbon metabolite
-        possible_isotopomers = [map(int, bin(i)[2:].zfill(n_carbons)).tolist() for i in range(2 ** n_carbons)]
+        possible_isotopomers = [list(map(int, bin(i)[2:].zfill(n_carbons))) for i in range(2 ** n_carbons)]
 
         # Convert the possible isotopomers to strings to match the data format
         possible_isotopomers_str = [str(iso) for iso in possible_isotopomers]
@@ -1285,7 +1285,7 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
 
         # Convert mean predictions into isotopomer distributions
         predicted_distributions = []
-        possible_isotopomers = [map(int, bin(i)[2:].zfill(n_carbons)).tolist() for i in range(2 ** n_carbons)]
+        possible_isotopomers = [list(map(int, bin(i)[2:].zfill(n_carbons))) for i in range(2 ** n_carbons)]
 
         for prediction in mean_predictions:
             # Filter out isotopomers with zero percentages

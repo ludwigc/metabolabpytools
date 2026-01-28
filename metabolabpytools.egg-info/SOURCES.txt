@@ -13,6 +13,12 @@ metabolabpytools.egg-info/SOURCES.txt
 metabolabpytools.egg-info/dependency_links.txt
 metabolabpytools.egg-info/requires.txt
 metabolabpytools.egg-info/top_level.txt
-metabolabpytools/jupyter/isotopomerAnalysis.xlsx
+metabolabpytools/jupyter/gcmsData1.xlsx
+metabolabpytools/jupyter/hsqcData1.xlsx
+metabolabpytools/jupyter/isotopomer_analysis_nn_training.ipynb
+metabolabpytools/jupyter/isotopomeranalysis_nn.ipynb
+metabolabpytools/jupyter/nn_isotopmer_distribution.ipynb
 metabolabpytools/jupyter/read_isotopomer_data.ipynb
+metabolabpytools/jupyter/read_isotopomer_data_nn.ipynb
 metabolabpytools/jupyter/sim_isotopomer_distribution.ipynb
+metabolabpytools/jupyter/test.py

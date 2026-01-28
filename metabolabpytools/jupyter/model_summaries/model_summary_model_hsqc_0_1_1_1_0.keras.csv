@@ -1,0 +1,2 @@
+Model Name,MSE,MAE,num_layers,learning_rate,l2_lambda,dropout_rate
+model_hsqc_0_1_1_1_0.keras,1.4785034656524658,0.7593014240264893,1,0.0001,1e-05,0.1

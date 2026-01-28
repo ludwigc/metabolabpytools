@@ -1,6 +1,6 @@
-Metadata-Version: 2.2
+Metadata-Version: 2.4
 Name: metabolabpytools
-Version: 0.9.66
+Version: 0.9.67
 Summary: Tools for metabolomics and metabolism tracing data
 Home-page: https://github.com/ludwigc/metabolabpytools
 Author: Christian Ludwig
@@ -19,6 +19,12 @@ License-File: LICENSE
 Requires-Dist: numpy
 Requires-Dist: scipy
 Requires-Dist: pandas
+Requires-Dist: openpyxl
+Requires-Dist: tensorflow
+Requires-Dist: keras-tuner
+Requires-Dist: scikit-learn
+Requires-Dist: matplotlib
+Requires-Dist: seaborn
 Dynamic: author
 Dynamic: author-email
 Dynamic: classifier
@@ -26,6 +32,7 @@ Dynamic: description
 Dynamic: home-page
 Dynamic: keywords
 Dynamic: license
+Dynamic: license-file
 Dynamic: platform
 Dynamic: requires-dist
 Dynamic: summary
