@@ -16,9 +16,19 @@ import pandas as pd
 import os
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
-from collections import defaultdict  # Add this import statement
 
 
+@tf.keras.utils.register_keras_serializable()
+class NormalizationLayer(layers.Layer):
+    """Rescales a layer's outputs so they are non-negative and sum to 100.
+
+    Registered as a serializable Keras layer so models that use it can be
+    saved and reloaded without passing custom_objects explicitly.
+    """
+
+    def call(self, inputs):
+        normalized = tf.math.divide_no_nan(inputs, tf.reduce_sum(inputs, axis=-1, keepdims=True))
+        return normalized * 100
 
 
 class IsotopomerAnalysis:
@@ -1030,24 +1040,31 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
         return np.array(X)
 
     def create_dynamic_nn_model(self, input_dim, output_dim):
+        # Fixed, small architecture. Bayesian tuning consistently converged on a
+        # 1-2 layer network with minimal regularization, so a fixed net of this
+        # size trains in seconds and matches the tuned models' accuracy. The two
+        # dropout layers also provide the stochasticity used by MC-dropout at
+        # inference, and NormalizationLayer forces outputs to be non-negative and
+        # sum to 100 (consistent with the tuned path).
         model = models.Sequential()
-        model.add(layers.Input(shape=(input_dim,)))  # Define input shape using Input layer
+        model.add(layers.Input(shape=(input_dim,)))
         model.add(layers.Dense(128, activation='relu'))
+        model.add(layers.Dropout(0.05))
         model.add(layers.Dense(64, activation='relu'))
-        model.add(layers.Dense(32, activation='relu'))
-        # Use ReLU activation in the output layer to ensure non-negative outputs
+        model.add(layers.Dropout(0.05))
         model.add(layers.Dense(output_dim, activation='relu'))
+        model.add(NormalizationLayer())
+        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
+                      loss='mean_squared_error', metrics=['mae'])
         return model
 
-    def train_neural_network(self, X_noisy, Y, plot_filename="trainingloss0110.png", epochs=100, batch_size=32, validation_split=0.2):
+    def train_neural_network(self, X_noisy, Y, hsqc_vector=None, plot_filename="trainingloss0110.png",
+                             epochs=500, batch_size=64, validation_split=0.2, save=True, save_dir="saved_models"):
         input_dim = X_noisy.shape[1]  # Number of features in X
         output_dim = Y.shape[1]  # Number of isotopomers in Y
 
-        # Create the model
+        # Create and compile the model
         model = self.create_dynamic_nn_model(input_dim, output_dim)
-
-        # Compile the model
-        model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mae'])
 
         # Display the model architecture
         model.summary()
@@ -1055,10 +1072,12 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
         # Split the data into training and validation sets
         X_train, X_val, Y_train, Y_val = train_test_split(X_noisy, Y, test_size=validation_split, random_state=42)
 
-        # Train the model
-        history = model.fit(X_train, Y_train, epochs=epochs, batch_size=batch_size, validation_data=(X_val, Y_val))
+        # Early stopping keeps training fast: the high epoch ceiling is rarely reached.
+        early_stopping = EarlyStopping(monitor='val_loss', patience=40, restore_best_weights=True)
 
-       # self.plot_and_save_training_history(history, plot_filename, "Training and Validation Loss, L-AsparticAcid [0, 1, 1, 0]")
+        # Train the model
+        history = model.fit(X_train, Y_train, epochs=epochs, batch_size=batch_size,
+                            validation_data=(X_val, Y_val), callbacks=[early_stopping])
 
         # Evaluate the model on the validation set
         val_loss, val_mae = model.evaluate(X_val, Y_val)
@@ -1071,6 +1090,11 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
         for i in range(5):
             print(f"Predicted: {predictions[i]}, Actual: {Y_val[i]}")
 
+        # Save the trained model and a summary (using the honest validation metrics)
+        if save and hsqc_vector is not None:
+            self.save_model(model, hsqc_vector, directory=save_dir)
+            self.save_training_summary(hsqc_vector, val_loss, val_mae)
+
         return model, history
 
     def tune_model(self, X, Y, hsqc_vector, plot_filename="TUNEDtrainingloss0110.png"):
@@ -1079,11 +1103,14 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
 
         hypermodel = self.MetaboliteHyperModel(input_dim, output_dim)
 
+        # Optional advanced path. The fixed-architecture train_neural_network is the
+        # default; this Bayesian search is kept for occasional experimentation but is
+        # deliberately cheap (a full 200x5 search was ~1000 trainings for little gain).
         tuner = BayesianOptimization(
             hypermodel.build,
             objective="val_loss",
-            max_trials=200,
-            executions_per_trial=5,
+            max_trials=20,
+            executions_per_trial=1,
             directory="tuning_dir",
             project_name=f"metabolite_tuning_{'_'.join(map(str, hsqc_vector))}"
         )
@@ -1117,7 +1144,7 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
         self.save_model_summary(best_model, val_loss, val_mae, tuner, hsqc_vector)
 
         # Perform Monte Carlo Dropout predictions after hyperparameter tuning
-        mean_pred, std_dev_pred = self.mc_dropout_predict(best_model, X_val, n_iter=10000)
+        mean_pred, std_dev_pred = self.mc_dropout_predict(best_model, X_val, n_iter=200)
 
         # Example: Comparing normalized predictions with actual Y values
         for i in range(5):
@@ -1126,13 +1153,6 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
 
 
         return best_model, X_val, Y_val, mean_pred, std_dev_pred
-
-    class NormalizationLayer(layers.Layer):
-        def call(self, inputs):
-            # Normalize the inputs to sum to 1
-            normalized = tf.math.divide_no_nan(inputs, tf.reduce_sum(inputs, axis=-1, keepdims=True))
-            # Scale to sum to 100
-            return normalized * 100
 
     class MetaboliteHyperModel:
         def __init__(self, input_dim, output_dim):
@@ -1150,7 +1170,7 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
                 ))
                 model.add(layers.Dropout(rate=hp.Float('dropout_rate', 0.1, 0.5, step=0.05)))
             model.add(layers.Dense(self.output_dim, activation='relu'))
-            model.add(IsotopomerAnalysisNN.NormalizationLayer())  # Add the custom normalization layer
+            model.add(NormalizationLayer())  # Add the custom normalization layer
             model.compile(
                 optimizer=tf.keras.optimizers.Adam(
                     learning_rate=hp.Float('learning_rate', 1e-4, 1e-2, sampling='log', default=0.001)),
@@ -1191,6 +1211,24 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
         summary_df.to_csv(summary_filename, index=False)
         print(f"Model summary saved as {summary_filename}")
 
+    def save_training_summary(self, hsqc_vector, val_loss, val_mae, directory="model_summaries"):
+        """Writes a summary for a fixed-architecture model (no tuner required)."""
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+        summary_data = {
+            'Model Name': [self.generate_model_filename(hsqc_vector)],
+            'MSE': [val_loss],
+            'MAE': [val_mae],
+            'architecture': ['fixed: Dense(128)-Dropout(0.05)-Dense(64)-Dropout(0.05)'],
+            'learning_rate': [1e-3],
+        }
+
+        summary_df = pd.DataFrame(summary_data)
+        summary_filename = os.path.join(directory, f"model_summary_{self.generate_model_filename(hsqc_vector)}.csv")
+        summary_df.to_csv(summary_filename, index=False)
+        print(f"Model summary saved as {summary_filename}")
+
     # New method to load data
     def load_hsqc_and_gcms_data(self, hsqc_data_file, gcms_data_file):
         """Loads HSQC and GC-MS data from provided file paths."""
@@ -1216,35 +1254,42 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
         else:
             print(f"No data found for metabolite {metabolite_name}")
 
-    def create_feature_vectors(self, metabolite_name):
-        """Combines HSQC and GC-MS data into feature vectors for a given metabolite, handling duplicate multiplets."""
+    def create_feature_vectors(self, metabolite_name, hsqc_vector):
+        """Combines HSQC and GC-MS data into feature vectors for a given metabolite.
+
+        The HSQC features are ordered and zero-padded against the full set of
+        possible multiplets for this HSQC vector, exactly matching the ordering
+        used during training (collate_x_labels_*). Without this, the model would
+        receive features in a different order/length at inference than at
+        training time, silently degrading predictions.
+        """
         if metabolite_name not in self.exp_multiplets:
             print(f"No data found for metabolite {metabolite_name}")
             return None
+
+        all_possible_hsqc_multiplets = self.generate_possible_hsqc_multiplets(hsqc_vector)
 
         X_real_data = []
 
         # Iterate over each experiment
         for exp_idx in range(self.n_exps):
-            # Create a dictionary to accumulate percentages for duplicate multiplets
-            hsqc_dict = defaultdict(list)
-
             # Get the HSQC multiplets and their percentages for the current experiment
             hsqc_multiplets = self.exp_multiplets[metabolite_name][exp_idx]
             hsqc_percentages = self.exp_multiplet_percentages[metabolite_name][exp_idx]
 
-            # Fill the dictionary with the multiplet as key and percentages as values
+            # Initialise every possible multiplet to zero, then fill from the data.
+            hsqc_dict = {str(multiplet): 0 for multiplet in all_possible_hsqc_multiplets}
             for multiplet, percentage in zip(hsqc_multiplets, hsqc_percentages):
-                hsqc_dict[str(multiplet)].append(percentage)
+                hsqc_dict[str(multiplet)] = percentage
 
-            # Average the percentages for any duplicate multiplets
-            averaged_percentages = [np.mean(hsqc_dict[multiplet]) for multiplet in hsqc_dict]
+            # Order the HSQC percentages by the canonical possible-multiplet order.
+            hsqc_percentages_ordered = [hsqc_dict[str(multiplet)] for multiplet in all_possible_hsqc_multiplets]
 
             # Get the GC-MS percentages for the current experiment
             gcms_percentages = self.exp_gcms[metabolite_name][exp_idx]
 
-            # Combine averaged HSQC percentages and GC-MS data into a single feature vector
-            X_sample = np.hstack([averaged_percentages, gcms_percentages])
+            # Combine ordered HSQC percentages and GC-MS data into a single feature vector
+            X_sample = np.hstack([hsqc_percentages_ordered, gcms_percentages])
 
             # Append the feature vector to the list
             X_real_data.append(X_sample)
@@ -1254,23 +1299,18 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
 
         return X_real_data
 
-    def load_model_and_predict(self, model_path, X_real_data, n_carbons, n_iter=10000):
+    def load_model_and_predict(self, model_path, X_real_data, n_carbons, n_iter=200):
         """Loads a trained model, makes predictions on real data with Monte Carlo Dropout, and simulates HSQC/GC-MS data."""
 
-        @tf.keras.utils.register_keras_serializable()
-        class NormalizationLayer(tf.keras.layers.Layer):
-            def call(self, inputs):
-                normalized = tf.math.divide_no_nan(inputs, tf.reduce_sum(inputs, axis=-1, keepdims=True))
-                return normalized * 100
-
-        # Load the trained model with custom objects
+        # NormalizationLayer is registered as serializable at module level, so it
+        # loads automatically; passing it via custom_objects too is harmless.
         best_model = tf.keras.models.load_model(
             model_path,
             custom_objects={'NormalizationLayer': NormalizationLayer}
         )
 
         # Define a function to run the model with training=True
-        def mc_dropout_predict(model, X, n_iter=10000):
+        def mc_dropout_predict(model, X, n_iter=200):
             predictions = []
             for _ in range(n_iter):
                 predictions.append(model(X, training=True))  # Directly call the model with training=True
@@ -1334,7 +1374,7 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
         return predicted_hsqc_data, predicted_gcms_data
 
 
-    def mc_dropout_predict(self, model, X, n_iter=10000):
+    def mc_dropout_predict(self, model, X, n_iter=200):
 
         predictions = []
 

@@ -26,6 +26,12 @@ def main():
         packages=setuptools.find_packages(),
         test_suite='tests.suite',
         install_requires=open('requirements.txt').read().splitlines(),
+        entry_points={
+            'console_scripts': [
+                'mlp-train=metabolabpytools.scripts.train:main',
+                'mlp-predict=metabolabpytools.scripts.predict:main',
+            ],
+        },
         include_package_data=True,
         classifiers=[
           "Programming Language :: Python :: 3",

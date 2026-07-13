@@ -100,3 +100,10 @@ ENV/
 *.DS_Store
 
 *~
+
+# Keras-tuner search artifacts (large; regenerated on demand)
+tuning_dir/
+
+# Generated simulation data and analysis outputs
+**/sim_data/
+**/nn_analysis_results/
