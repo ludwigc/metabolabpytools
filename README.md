@@ -2,6 +2,26 @@
 [![DOI](https://zenodo.org/badge/644108117.svg)](https://zenodo.org/doi/10.5281/zenodo.13342463)
 Tools used for metabolism related data analysis
 
+## Documentation
+
+Two self-contained HTML handouts live in [`docs/`](docs/) — open either in a
+browser (no build step, no dependencies):
+
+- **[Quickstart](docs/quickstart.html)** — how to install and run the train/predict workflow.
+- **[How it works](docs/how-it-works.html)** — what the pipeline does and why accuracy plateaus for larger metabolites.
+
+```bash
+# macOS
+open docs/quickstart.html docs/how-it-works.html
+# Linux
+xdg-open docs/quickstart.html
+# Windows
+start docs\quickstart.html
+```
+
+Both are styled for print, so **⌘P / Ctrl+P → Save as PDF** turns them into
+shareable handouts.
+
 ## Isotopomer analysis: train & predict
 
 Predict isotopomer distributions from HSQC + GC-MS data with a small neural

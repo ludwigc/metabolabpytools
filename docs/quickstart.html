@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quickstart · metabolabpytools</title>
+<style>
+  :root{
+    --bg:#ffffff; --panel:#f7f8fa; --ink:#1a1d24; --muted:#5c6472;
+    --line:#e3e7ee; --accent:#2f6f4f; --accent-soft:#e6f1ea;
+    --code-bg:#1c2230; --code-ink:#e7ecf5; --chip:#eef1f6;
+    --maxw:820px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#12151b; --panel:#191d25; --ink:#e9edf3; --muted:#9aa4b2;
+      --line:#272d38; --accent:#6fce9f; --accent-soft:#16241d;
+      --code-bg:#0d1017; --code-ink:#dce3ee; --chip:#222835;
+    }
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    padding:48px 20px;
+  }
+  .wrap{max-width:var(--maxw); margin:0 auto}
+  header.doc{border-bottom:2px solid var(--accent); padding-bottom:20px; margin-bottom:8px}
+  .eyebrow{font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); font-weight:700; margin:0 0 8px}
+  h1{font-size:30px; line-height:1.2; margin:0 0 10px; letter-spacing:-.01em}
+  .lede{font-size:17px; color:var(--muted); margin:0; max-width:60ch}
+  .meta{font-size:12.5px; color:var(--muted); margin-top:14px}
+  .nav{display:flex; gap:10px; flex-wrap:wrap; margin:22px 0 34px}
+  .nav a{font-size:13px; text-decoration:none; color:var(--ink); background:var(--chip);
+    padding:6px 12px; border-radius:999px; border:1px solid var(--line)}
+  .nav a.here{background:var(--accent); color:#fff; border-color:var(--accent)}
+  section{margin:0 0 34px}
+  h2{font-size:13px; letter-spacing:.1em; text-transform:uppercase; color:var(--accent);
+    margin:0 0 6px; display:flex; align-items:baseline; gap:10px}
+  h2 .n{font-variant-numeric:tabular-nums; color:var(--muted); font-weight:700}
+  h2 .t{color:var(--ink); letter-spacing:0; text-transform:none; font-size:20px}
+  .step-lede{color:var(--muted); margin:.2em 0 1em}
+  pre{background:var(--code-bg); color:var(--code-ink); border-radius:10px; padding:16px 18px;
+    overflow-x:auto; font:13.5px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; margin:0 0 14px}
+  pre .c{color:#8b97a8}
+  code.inl{background:var(--chip); border:1px solid var(--line); border-radius:5px; padding:1px 6px;
+    font:13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .grid{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+  @media (max-width:620px){ .grid{grid-template-columns:1fr} }
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px 18px}
+  .card h3{margin:0 0 6px; font-size:15px}
+  .card p{margin:0; color:var(--muted); font-size:14px}
+  .tag{display:inline-block; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--accent); background:var(--accent-soft); padding:3px 9px; border-radius:6px; margin-bottom:10px}
+  table{width:100%; border-collapse:collapse; font-size:14px; margin:6px 0 4px}
+  th,td{text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:top}
+  th{font-size:12px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted)}
+  td code{font:12.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .note{background:var(--accent-soft); border-left:3px solid var(--accent); border-radius:0 8px 8px 0;
+    padding:14px 16px; font-size:14.5px; color:var(--ink)}
+  .note strong{color:var(--accent)}
+  ul.clean{margin:.4em 0; padding-left:1.2em}
+  ul.clean li{margin:.35em 0}
+  footer{margin-top:40px; padding-top:18px; border-top:1px solid var(--line); font-size:12.5px; color:var(--muted)}
+  a{color:var(--accent)}
+  @media print{
+    body{padding:0; font-size:11.5pt}
+    .nav{display:none}
+    pre{background:#f0f2f5; color:#1a1d24; border:1px solid #ccc}
+    pre .c{color:#667}
+    header.doc{border-color:#333}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="doc">
+    <p class="eyebrow">Quickstart · metabolabpytools</p>
+    <h1>Predicting isotopomer distributions from HSQC&nbsp;+&nbsp;GC&#8209;MS data</h1>
+    <p class="lede">Train one small neural network per HSQC vector, then use it to predict the
+      isotopomer distribution of a measured metabolite. Two ways to run it: notebooks for a
+      walkthrough, or the command line for one-shot runs.</p>
+    <p class="meta">isotopomerAnalysis · <sup>13</sup>C tracing workflow</p>
+  </header>
+
+  <nav class="nav">
+    <a class="here" href="quickstart.html">Quickstart</a>
+    <a href="how-it-works.html">How it works &rarr;</a>
+  </nav>
+
+  <section>
+    <h2><span class="n">1</span><span class="t">Set up</span></h2>
+    <p class="step-lede">From the repository root, install the package into your environment. This
+      also registers the <code class="inl">mlp-train</code> and <code class="inl">mlp-predict</code> commands.</p>
+<pre><span class="c"># one-time, from the repo root</span>
+pip install -e .</pre>
+    <div class="note">
+      <strong>Dependencies</strong> — installs numpy, scipy, pandas, openpyxl, tensorflow,
+      keras-tuner, scikit-learn, matplotlib and seaborn. Python 3.9+ is recommended.
+      A virtual environment (e.g. the project&rsquo;s <code class="inl">.venv</code>) keeps this isolated.
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">2</span><span class="t">Know your inputs</span></h2>
+    <p class="step-lede">Everything is keyed to an <strong>HSQC vector</strong> &mdash; one digit per
+      carbon, <code class="inl">1</code> if that carbon is observed in HSQC, <code class="inl">0</code>
+      if not (e.g.&nbsp;lactate is <code class="inl">0&nbsp;1&nbsp;1</code>). A model is trained per vector.
+      Prediction needs two spreadsheets: an HSQC multiplets file and a GC&#8209;MS file, each with one
+      sheet per metabolite.</p>
+    <table>
+      <thead><tr><th>Input</th><th>What it is</th></tr></thead>
+      <tbody>
+        <tr><td><code>--hsqc-vector</code></td><td>Which carbons are HSQC-visible, one digit each.</td></tr>
+        <tr><td><code>--hsqc-data</code></td><td>HSQC multiplets spreadsheet (<code>hsqcData1.xlsx</code>), one sheet per metabolite.</td></tr>
+        <tr><td><code>--gcms-data</code></td><td>GC&#8209;MS fragment percentages (<code>gcmsData1.xlsx</code>), one sheet per metabolite.</td></tr>
+        <tr><td><code>--metabolite</code></td><td>The sheet name to analyse, e.g. <code>L-LacticAcid</code>.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2><span class="n">3</span><span class="t">Train, then predict</span></h2>
+    <div class="grid">
+      <div class="card">
+        <span class="tag">Option A · Notebooks</span>
+        <h3>A guided walkthrough</h3>
+        <p>In <code class="inl">metabolabpytools/jupyter/</code>:</p>
+        <ul class="clean">
+          <li>Open <strong>01_train.ipynb</strong>, set <code class="inl">hsqc_vector</code>, Run All &mdash; simulates data, trains, and saves the model.</li>
+          <li>Open <strong>02_predict.ipynb</strong>, set the same vector, the model path and metabolite, Run All to get the distribution and a results file.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <span class="tag">Option B · Command line</span>
+        <h3>One command each</h3>
+        <p>Run from <code class="inl">metabolabpytools/jupyter/</code> (where the example data lives), or add <code class="inl">--work-dir&nbsp;&lt;path&gt;</code>.</p>
+      </div>
+    </div>
+<pre style="margin-top:14px"><span class="c"># train a model for one vector</span>
+mlp-train --hsqc-vector 0 1 1
+
+<span class="c"># predict on measured data</span>
+mlp-predict --model saved_models/model_hsqc_0_1_1.keras \
+  --hsqc-vector 0 1 1 \
+  --hsqc-data hsqcData1.xlsx \
+  --gcms-data gcmsData1.xlsx \
+  --metabolite L-LacticAcid</pre>
+    <div class="note">
+      The number of training samples scales with carbon count automatically
+      (10k for &le;3 carbons, 20k for 4, 40k for 5); override with <code class="inl">--n-distributions</code>.
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">4</span><span class="t">Where results land</span></h2>
+    <p class="step-lede">Written relative to your working directory:</p>
+    <table>
+      <tbody>
+        <tr><td><code>saved_models/</code></td><td>the trained <code>.keras</code> model</td></tr>
+        <tr><td><code>model_summaries/</code></td><td>architecture + validation MAE/MSE</td></tr>
+        <tr><td><code>sim_data/</code></td><td>the simulated training data (kept for reference)</td></tr>
+        <tr><td><code>nn_analysis_results/</code></td><td>predictions vs. back-calculated data</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2><span class="t" style="font-size:16px">Good to know</span></h2>
+    <ul class="clean">
+      <li><strong>Training is fast</strong> &mdash; seconds for 3-carbon, a few minutes for 5 &mdash; so retrain freely to iterate.</li>
+      <li><strong>Accuracy</strong> is excellent for 3-carbon metabolites (~0.5% MAE) and settles near ~1% for 4&ndash;5 carbons, which is a limit of the measurements rather than the model.</li>
+      <li><strong>Every prediction returns a per-isotopomer uncertainty</strong> (a standard deviation from Monte-Carlo dropout) alongside the mean.</li>
+    </ul>
+    <p style="color:var(--muted); font-size:14px">See <a href="how-it-works.html">How it works</a> for why accuracy plateaus and what the model is doing under the hood.</p>
+  </section>
+
+  <footer>
+    metabolabpytools &middot; isotopomer analysis &middot; GPLv3 &middot;
+    <a href="https://github.com/ludwigc/metabolabpytools">github.com/ludwigc/metabolabpytools</a>
+  </footer>
+
+</div>
+</body>
+</html>

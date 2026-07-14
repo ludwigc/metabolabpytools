@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How it works · metabolabpytools</title>
+<style>
+  :root{
+    --bg:#ffffff; --panel:#f7f8fa; --ink:#1a1d24; --muted:#5c6472;
+    --line:#e3e7ee; --accent:#2f6f4f; --accent-soft:#e6f1ea;
+    --code-bg:#1c2230; --code-ink:#e7ecf5; --chip:#eef1f6;
+    --warn:#8a5a00; --warn-soft:#fbf1dd;
+    --maxw:840px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#12151b; --panel:#191d25; --ink:#e9edf3; --muted:#9aa4b2;
+      --line:#272d38; --accent:#6fce9f; --accent-soft:#16241d;
+      --code-bg:#0d1017; --code-ink:#dce3ee; --chip:#222835;
+      --warn:#e5b567; --warn-soft:#2a2310;
+    }
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    padding:48px 20px;
+  }
+  .wrap{max-width:var(--maxw); margin:0 auto}
+  header.doc{border-bottom:2px solid var(--accent); padding-bottom:20px; margin-bottom:8px}
+  .eyebrow{font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); font-weight:700; margin:0 0 8px}
+  h1{font-size:30px; line-height:1.2; margin:0 0 10px; letter-spacing:-.01em}
+  .lede{font-size:17px; color:var(--muted); margin:0; max-width:64ch}
+  .meta{font-size:12.5px; color:var(--muted); margin-top:14px}
+  .nav{display:flex; gap:10px; flex-wrap:wrap; margin:22px 0 34px}
+  .nav a{font-size:13px; text-decoration:none; color:var(--ink); background:var(--chip);
+    padding:6px 12px; border-radius:999px; border:1px solid var(--line)}
+  .nav a.here{background:var(--accent); color:#fff; border-color:var(--accent)}
+  section{margin:0 0 36px}
+  h2{font-size:20px; margin:0 0 4px; letter-spacing:-.01em}
+  h2 .k{font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--accent); display:block; margin-bottom:4px; font-weight:700}
+  .sub{color:var(--muted); margin:.1em 0 1em; max-width:66ch}
+  h3{font-size:15px; margin:1.4em 0 .4em}
+  p{margin:.6em 0}
+  pre{background:var(--code-bg); color:var(--code-ink); border-radius:10px; padding:16px 18px;
+    overflow-x:auto; font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; margin:14px 0}
+  pre .c{color:#8b97a8}
+  code.inl{background:var(--chip); border:1px solid var(--line); border-radius:5px; padding:1px 6px;
+    font:13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .pipe{display:flex; flex-wrap:wrap; align-items:stretch; gap:10px; margin:18px 0}
+  .pipe .box{flex:1 1 150px; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 14px}
+  .pipe .box .s{font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); font-weight:700}
+  .pipe .box .b{font-size:14px; margin-top:3px}
+  .pipe .arw{align-self:center; color:var(--muted); font-size:20px; flex:0 0 auto}
+  @media (max-width:640px){ .pipe{flex-direction:column} .pipe .arw{transform:rotate(90deg)} }
+  table{width:100%; border-collapse:collapse; font-size:14px; margin:10px 0}
+  th,td{text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:top}
+  th{font-size:12px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted)}
+  td code, th code{font:12.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .num{text-align:right; font-variant-numeric:tabular-nums}
+  .callout{border-left:3px solid var(--accent); background:var(--accent-soft); border-radius:0 8px 8px 0;
+    padding:14px 16px; margin:16px 0; font-size:14.5px}
+  .callout.warn{border-color:var(--warn); background:var(--warn-soft)}
+  .callout .h{font-weight:700; color:var(--accent); display:block; margin-bottom:3px}
+  .callout.warn .h{color:var(--warn)}
+  ul.clean{margin:.5em 0; padding-left:1.2em}
+  ul.clean li{margin:.4em 0}
+  .files{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:6px 4px}
+  .files table{margin:0}
+  .files td:first-child code{color:var(--accent)}
+  footer{margin-top:44px; padding-top:18px; border-top:1px solid var(--line); font-size:12.5px; color:var(--muted)}
+  a{color:var(--accent)}
+  .lead-in{font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); font-weight:700; margin-top:2.2em}
+  @media print{
+    body{padding:0; font-size:11pt}
+    .nav{display:none}
+    pre{background:#f0f2f5; color:#1a1d24; border:1px solid #ccc}
+    pre .c{color:#667}
+    .pipe .arw{transform:none}
+    header.doc{border-color:#333}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="doc">
+    <p class="eyebrow">How it works · metabolabpytools</p>
+    <h1>Recovering <sup>13</sup>C isotopomer distributions from NMR&nbsp;+&nbsp;MS</h1>
+    <p class="lede">A tour of the isotopomer-analysis pipeline: what the data means, how the network is
+      trained on simulation, how predictions come with uncertainty, and where the classical fitting
+      route fits in.</p>
+    <p class="meta">Package overview &middot; <code class="inl">metabolabpytools.isotopomerAnalysis</code></p>
+  </header>
+
+  <nav class="nav">
+    <a href="quickstart.html">&larr; Quickstart</a>
+    <a class="here" href="how-it-works.html">How it works</a>
+  </nav>
+
+  <!-- THE PROBLEM -->
+  <section>
+    <h2><span class="k">The problem</span>What we&rsquo;re trying to recover</h2>
+    <p class="sub">In a <sup>13</sup>C tracing experiment, a labelled substrate is fed to cells and its
+      carbon spreads through metabolism. Each metabolite ends up as a mixture of <em>isotopomers</em> &mdash;
+      copies of the molecule differing in which specific carbons carry a <sup>13</sup>C label.</p>
+    <p>An <em>n</em>-carbon metabolite has <strong>2<sup>n</sup></strong> possible isotopomers (each carbon
+      is labelled or not). The goal is the full distribution &mdash; the fraction of molecules in each of
+      those 2<sup>n</sup> states &mdash; because that pattern encodes which metabolic pathways were active.
+      We never measure it directly; we infer it from two complementary experiments:</p>
+    <ul class="clean">
+      <li><strong>HSQC NMR multiplets</strong> &mdash; for each HSQC-visible carbon, the fine structure of its
+        peak reports whether <em>neighbouring</em> carbons are also labelled (via <sup>13</sup>C&ndash;<sup>13</sup>C
+        coupling). This gives local, position-resolved information.</li>
+      <li><strong>GC&#8209;MS</strong> &mdash; the mass-isotopomer distribution tells you <em>how many</em> carbons
+        are labelled in total, but not which ones.</li>
+    </ul>
+    <p>Neither alone pins down the distribution; together they constrain it. The HSQC vector
+      (e.g. <code class="inl">0&nbsp;1&nbsp;1</code>) records which carbons are observable in HSQC &mdash;
+      carbon 1 of lactate, for instance, is a carboxyl and isn&rsquo;t seen.</p>
+  </section>
+
+  <!-- THE PIPELINE -->
+  <section>
+    <h2><span class="k">The pipeline</span>From simulation to prediction</h2>
+    <p class="sub">Rather than fit each sample from scratch, the tool learns the inverse map
+      (measurements &rarr; distribution) once per HSQC vector, by training a network on simulated data
+      where the true answer is known.</p>
+
+    <div class="pipe">
+      <div class="box"><span class="s">1 · Simulate</span><div class="b">Random isotopomer distributions &rarr; forward-model their HSQC + GC&#8209;MS signatures</div></div>
+      <div class="arw">&rarr;</div>
+      <div class="box"><span class="s">2 · Train</span><div class="b">Network learns signature &rarr; distribution</div></div>
+      <div class="arw">&rarr;</div>
+      <div class="box"><span class="s">3 · Predict</span><div class="b">Feed real measurements &rarr; distribution + uncertainty</div></div>
+    </div>
+
+    <h3>1 &middot; Simulating training data</h3>
+    <p><code class="inl">generate_isotopomer_distributions()</code> builds thousands of synthetic samples.
+      For each: every one of the 2<sup>n</sup> isotopomers is included by a coin flip (the unlabelled
+      state always in), the unlabelled fraction is drawn between 30&ndash;100%, and the remainder is split
+      randomly across the included isotopomers so the whole thing sums to 100%.</p>
+    <p>Each distribution is then pushed through the <strong>same forward model used by the classical
+      fitting code</strong> (<code class="inl">sim_hsqc_data</code> / <code class="inl">sim_gcms_data</code>),
+      which turns a known distribution into the HSQC multiplet percentages and GC&#8209;MS percentages it
+      would produce &mdash; including natural <sup>13</sup>C abundance (1.07%) and the <em>n</em>-bond
+      coupling range that decides which neighbours show up in a multiplet.</p>
+
+    <h3>2 &middot; Features and labels</h3>
+    <table>
+      <thead><tr><th>Vector</th><th>What it holds</th><th>Built by</th></tr></thead>
+      <tbody>
+        <tr><td><strong>X</strong> (input)</td>
+            <td>HSQC multiplet percentages, zero-padded against every possible multiplet for this vector, concatenated with the GC&#8209;MS percentages.</td>
+            <td><code>collate_x_labels_*</code></td></tr>
+        <tr><td><strong>Y</strong> (target)</td>
+            <td>The full 2<sup>n</sup>-length isotopomer distribution (percent in each state).</td>
+            <td><code>collate_y_labels</code></td></tr>
+      </tbody>
+    </table>
+    <p>Feature ordering is canonical and shared between training and inference
+      (<code class="inl">create_feature_vectors</code> reuses the exact same multiplet order), so the model
+      sees inputs the same way in both. A small amount of Gaussian noise can be added to X to mimic
+      measurement error.</p>
+
+    <h3>3 &middot; The network</h3>
+<pre>Input(dim = #HSQC-multiplets + #GC-MS-channels)
+  &rarr; Dense(128, relu) &rarr; Dropout(0.05)
+  &rarr; Dense(64,  relu) &rarr; Dropout(0.05)
+  &rarr; Dense(2ⁿ, relu)
+  &rarr; NormalizationLayer            <span class="c"># non-negative, rescaled to sum to 100</span>
+loss = MSE   ·   optimizer = Adam(1e-3)   ·   early stopping on val_loss</pre>
+    <p>It&rsquo;s deliberately small. A Bayesian hyperparameter search
+      (<code class="inl">tune_model</code>, still available) kept converging on a 1&ndash;2 layer network with
+      little regularization, so the fixed architecture above matches its accuracy while training in
+      seconds. The final <code class="inl">NormalizationLayer</code> guarantees every prediction is a valid
+      distribution &mdash; non-negative and summing to 100.</p>
+
+    <h3>4 &middot; Prediction with uncertainty</h3>
+    <p>At inference the two dropout layers are left <em>active</em> and the model is run
+      <code class="inl">n_iter</code> times (default 200). This <strong>Monte-Carlo dropout</strong> yields a
+      <em>mean</em> prediction and a <em>standard deviation</em> per isotopomer &mdash; the built-in
+      uncertainty estimate. The prediction is then back-simulated into HSQC/GC&#8209;MS space and written
+      next to the real measurements so you can see how well it reproduces the inputs.</p>
+  </section>
+
+  <!-- WHY THE CEILING -->
+  <section>
+    <h2><span class="k">Why accuracy plateaus</span>A structural limit, not a modelling flaw</h2>
+    <p class="sub">Below 4 carbons the problem is well-posed. At and above it, we try to recover more
+      isotopomers than we have independent measurements &mdash; an underdetermined inverse problem, so
+      part of the error is irreducible.</p>
+    <table>
+      <thead><tr>
+        <th>Metabolite size</th>
+        <th class="num">Observables<br><span style="font-weight:400;text-transform:none">(HSQC + GC&#8209;MS)</span></th>
+        <th class="num">Isotopomers<br><span style="font-weight:400;text-transform:none">to recover</span></th>
+        <th>Determinacy</th>
+        <th class="num">Val MAE</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>3 carbons</td><td class="num">10&nbsp;(6+4)</td><td class="num">8</td><td>over-determined</td><td class="num">0.46%</td></tr>
+        <tr><td>4 carbons</td><td class="num">13&nbsp;(8+5)</td><td class="num">16</td><td>under by 3</td><td class="num">0.95%</td></tr>
+        <tr><td>5 carbons</td><td class="num">18&nbsp;(12+6)</td><td class="num">32</td><td>under by 14</td><td class="num">0.79%*</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:13px;color:var(--muted)">*The 5-carbon MAE looks lower only because many of its 32
+      isotopomers are near-zero and dilute the average; residual error concentrates on the least-constrained
+      isotopomers (a few at ~2%), while the well-determined ones are already ~0.3%.</p>
+    <div class="callout warn">
+      <span class="h">The ceiling is in the measurements, not the network</span>
+      A large unregularized network can&rsquo;t fit even the training data below ~1% MAE
+      (train 1.01% &asymp; val 1.09%), and changing the loss, adding data, or standardizing inputs each moved
+      accuracy by &lt;0.1%. Raising it needs <em>more independent measurements</em> or <em>fewer unknowns</em>
+      (biological priors) &mdash; see the meeting brief.
+    </div>
+  </section>
+
+  <!-- TWO ROUTES -->
+  <section>
+    <h2><span class="k">Two routes in one codebase</span>Neural network vs. classical fitting</h2>
+    <p class="sub">The same forward model backs both a learned inverse and a direct fit &mdash; useful for
+      cross-checking.</p>
+    <table>
+      <thead><tr><th></th><th>Neural network</th><th>Classical fit</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Class</strong></td><td><code>IsotopomerAnalysisNN</code></td><td><code>IsotopomerAnalysis.fit_data</code></td></tr>
+        <tr><td><strong>Method</strong></td><td>Learned map, trained once per HSQC vector on simulation</td><td>Per-sample &chi;<sup>2</sup> minimisation (SciPy Powell) against HSQC + GC&#8209;MS (+ optional 1D NMR)</td></tr>
+        <tr><td><strong>Speed at predict</strong></td><td>Instant once trained</td><td>Optimises each sample from scratch</td></tr>
+        <tr><td><strong>Uncertainty</strong></td><td>Yes &mdash; MC-dropout std per isotopomer</td><td>Not directly</td></tr>
+        <tr><td><strong>1D NMR channel</strong></td><td>Not fed to the model yet</td><td>Supported (<code>use_nmr1d_data</code>)</td></tr>
+      </tbody>
+    </table>
+    <p>The <code class="inl">nn_vs_manual_comparison.ipynb</code> notebook at the repo root pits the two
+      against each other on the same data.</p>
+  </section>
+
+  <!-- MAP -->
+  <section>
+    <h2><span class="k">Code map</span>Where things live</h2>
+    <div class="files">
+      <table>
+        <tbody>
+          <tr><td><code>metabolabpytools/isotopomerAnalysis.py</code></td><td>Core: forward model + <code>IsotopomerAnalysis</code> (classical) and <code>IsotopomerAnalysisNN</code> (network).</td></tr>
+          <tr><td><code>scripts/train.py</code> · <code>scripts/predict.py</code></td><td>CLI entry points <code>mlp-train</code> / <code>mlp-predict</code>.</td></tr>
+          <tr><td><code>jupyter/01_train.ipynb</code> · <code>02_predict.ipynb</code></td><td>Notebook walkthrough of the same two steps.</td></tr>
+          <tr><td><code>jupyter/*.xlsx</code></td><td>Example HSQC and GC&#8209;MS input spreadsheets.</td></tr>
+          <tr><td><code>nn_vs_manual_comparison.ipynb</code></td><td>Network vs. classical-fit comparison.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="color:var(--muted);font-size:14px;margin-top:14px">New here? Start with the
+      <a href="quickstart.html">Quickstart</a> to run it, then come back for the why.</p>
+  </section>
+
+  <footer>
+    metabolabpytools &middot; isotopomer analysis &middot; GPLv3 &middot;
+    <a href="https://github.com/ludwigc/metabolabpytools">github.com/ludwigc/metabolabpytools</a>
+  </footer>
+
+</div>
+</body>
+</html>
