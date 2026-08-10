@@ -4,11 +4,13 @@ Tools used for metabolism related data analysis
 
 ## Documentation
 
-Two self-contained HTML handouts live in [`docs/`](docs/) — open either in a
-browser (no build step, no dependencies):
+Two self-contained HTML handouts live in [`docs/`](docs/). **View them rendered
+in your browser** (GitHub shows the raw source otherwise):
 
-- **[Quickstart](docs/quickstart.html)** — how to install and run the train/predict workflow.
-- **[How it works](docs/how-it-works.html)** — what the pipeline does and why accuracy plateaus for larger metabolites.
+- **[▶ Quickstart](https://htmlpreview.github.io/?https://github.com/ludwigc/metabolabpytools/blob/main/docs/quickstart.html)** — how to install and run the train/predict workflow.
+- **[▶ How it works](https://htmlpreview.github.io/?https://github.com/ludwigc/metabolabpytools/blob/main/docs/how-it-works.html)** — what the pipeline does and why accuracy plateaus for larger metabolites.
+
+Or open the files locally after cloning:
 
 ```bash
 # macOS
@@ -52,3 +54,27 @@ to run elsewhere (e.g. `--work-dir metabolabpytools/jupyter`).
 Training uses a fixed, fast architecture (`Dense(128) → Dense(64)`), so there is
 no hyperparameter search to wait on. The optional `IsotopomerAnalysisNN.tune_model`
 Bayesian search is still available if you want to explore architectures.
+
+### Labelled-only models (optional, higher precision on the labelled pattern)
+
+For larger metabolites the unlabelled isotopomer dominates the distribution
+(often 60–90%), and fitting it alongside the small labelled species spends most
+of the model's error budget on that one large term. Passing `--labeled-only`
+trains on the labelled species only — the unlabelled component is dropped and
+the remaining isotopomers are renormalised to 100%, giving the labelling
+*pattern* the full dynamic range. In tests this improves precision on the
+labelled isotopomers by ~10–20%. (It does not overcome the underdetermination
+limit for 4+ carbons — see *How it works* — it just spends precision where it
+matters.)
+
+```bash
+# Train a labelled-only model (saved as ..._labeled.keras, alongside any baseline)
+mlp-train --hsqc-vector 0 1 1 --labeled-only
+
+# Predict with it: the unlabelled fraction is taken from the measured GC-MS M+0
+mlp-predict --model saved_models/model_hsqc_0_1_1_labeled.keras --hsqc-vector 0 1 1 --labeled-only \
+    --hsqc-data hsqcData1.xlsx --gcms-data gcmsData1.xlsx --metabolite L-LacticAcid
+```
+
+Labelled-only models are trained on demand (not committed to the repo); run the
+command above to create one for your vector.

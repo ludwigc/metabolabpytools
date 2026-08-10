@@ -26,6 +26,10 @@ def main():
     parser.add_argument("--metabolite", required=True, help="Metabolite name to analyse.")
     parser.add_argument("--n-iter", type=int, default=200, help="Monte-Carlo dropout iterations.")
     parser.add_argument("--work-dir", default=".", help="Directory to run in (results are written here).")
+    parser.add_argument("--labeled-only", action="store_true",
+                        help="The model was trained with mlp-train --labeled-only. Its conditional "
+                             "labelled pattern is recombined with the measured GC-MS unlabelled "
+                             "fraction to report the absolute distribution.")
     args = parser.parse_args()
 
     os.chdir(args.work_dir)
@@ -41,9 +45,16 @@ def main():
     if X_real_data is None:
         raise SystemExit(f"No data found for metabolite '{args.metabolite}'.")
 
-    mean_predictions, std_dev_predictions, predicted_distributions = ia.load_model_and_predict(
-        args.model, X_real_data, n_carbons, n_iter=args.n_iter,
-    )
+    if args.labeled_only:
+        # The measured unlabelled fraction is the GC-MS M+0 percentage per experiment.
+        measured_unlabeled = [ia.exp_gcms[args.metabolite][e][0] for e in range(ia.n_exps)]
+        mean_predictions, std_dev_predictions, predicted_distributions = ia.load_model_and_predict_labeled(
+            args.model, X_real_data, n_carbons, measured_unlabeled, n_iter=args.n_iter,
+        )
+    else:
+        mean_predictions, std_dev_predictions, predicted_distributions = ia.load_model_and_predict(
+            args.model, X_real_data, n_carbons, n_iter=args.n_iter,
+        )
 
     # Back-simulate HSQC/GC-MS from the predicted distribution for comparison.
     predicted_hsqc_data, predicted_gcms_data = ia.simulate_from_predictions(predicted_distributions, hsqc_vector)

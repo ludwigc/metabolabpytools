@@ -107,3 +107,6 @@ tuning_dir/
 # Generated simulation data and analysis outputs
 **/sim_data/
 **/nn_analysis_results/
+
+# Labelled-only models are an opt-in feature; users train their own
+*_labeled.keras

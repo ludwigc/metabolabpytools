@@ -931,8 +931,21 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
         else:
             raise FileNotFoundError(f"No spreadsheet found for HSQC vector {hsqc_vector}")
 
-    def collate_y_labels(self, isotopomer_data, n_carbons):
-        # Define the 8 possible isotopomers for a 3-carbon metabolite
+    def collate_y_labels(self, isotopomer_data, n_carbons, exclude_unlabeled=False):
+        """Build the label matrix Y (one row per sample, one column per isotopomer).
+
+        By default Y holds the full 2**n_carbons distribution, including the
+        all-unlabeled isotopomer, summing to 100 per row.
+
+        With ``exclude_unlabeled=True`` the all-unlabeled column ([0]*n_carbons)
+        is dropped and each remaining row is renormalised to sum to 100. The
+        target then describes the *conditional* distribution among labelled
+        species only, giving those components the full 0-100 dynamic range
+        instead of sharing the small (100 - unlabelled%) remainder. Rows with no
+        labelled content are left as all-zero; callers should filter them
+        (their conditional distribution is undefined) — see train.py.
+        """
+        # All 2**n possible isotopomer patterns, ordered; index 0 is [0]*n.
         possible_isotopomers = [list(map(int, bin(i)[2:].zfill(n_carbons))) for i in range(2 ** n_carbons)]
 
         # Convert the possible isotopomers to strings to match the data format
@@ -955,7 +968,16 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
 
             Y.append(Y_sample)
 
-        return np.array(Y)
+        Y = np.array(Y)
+
+        if exclude_unlabeled:
+            # Drop the all-unlabeled column (index 0) and renormalise the rest
+            # to 100. divide_no_nan-style guard: all-unlabeled rows stay zero.
+            Y = Y[:, 1:]
+            row_sums = Y.sum(axis=1, keepdims=True)
+            Y = np.divide(Y, row_sums, out=np.zeros_like(Y), where=row_sums > 0) * 100.0
+
+        return Y
 
     def generate_possible_hsqc_multiplets(self, hsqc_vector):
         active_positions = [i + 1 for i, x in enumerate(hsqc_vector) if x == 1]
@@ -1341,6 +1363,54 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
             })
 
         return mean_predictions, std_dev_predictions, predicted_distributions
+
+    def load_model_and_predict_labeled(self, model_path, X_real_data, n_carbons, measured_unlabeled, n_iter=200):
+        """Predict with a labelled-only model, then recombine into the absolute distribution.
+
+        A labelled-only model (trained with ``exclude_unlabeled=True``) outputs
+        the conditional distribution over the 2**n_carbons - 1 *labelled*
+        isotopomers, summing to 100. To report the usual absolute distribution
+        we scale that pattern by the measured labelled fraction and prepend the
+        unlabelled component read from GC-MS.
+
+        ``measured_unlabeled`` is the per-experiment unlabelled percentage
+        (GC-MS M+0), one value per row of ``X_real_data``.
+        """
+        best_model = tf.keras.models.load_model(
+            model_path, custom_objects={'NormalizationLayer': NormalizationLayer})
+
+        def mc_dropout_predict(model, X, n_iter=200):
+            preds = [model(X, training=True) for _ in range(n_iter)]
+            preds = np.array(preds)
+            return np.mean(preds, axis=0), np.std(preds, axis=0)
+
+        mean_cond, std_cond = mc_dropout_predict(best_model, X_real_data, n_iter=n_iter)
+
+        # Labelled isotopomer patterns, in the same order the labelled-only
+        # target used (all patterns except the all-zero one).
+        labelled_isotopomers = [list(map(int, bin(i)[2:].zfill(n_carbons))) for i in range(1, 2 ** n_carbons)]
+        unlabeled = [0] * n_carbons
+
+        measured_unlabeled = np.asarray(measured_unlabeled, dtype=float)
+        labelled_fraction = np.clip(100.0 - measured_unlabeled, 0.0, 100.0)
+
+        # Absolute mean/std over the full isotopomer set (unlabelled first).
+        mean_abs = np.concatenate(
+            [measured_unlabeled[:, None], mean_cond * labelled_fraction[:, None] / 100.0], axis=1)
+        std_abs = np.concatenate(
+            [np.zeros((len(measured_unlabeled), 1)), std_cond * labelled_fraction[:, None] / 100.0], axis=1)
+
+        all_isotopomers = [unlabeled] + labelled_isotopomers
+        predicted_distributions = []
+        for row in mean_abs:
+            isos, percs = [], []
+            for iso, perc in zip(all_isotopomers, row):
+                if perc > 0:
+                    isos.append(iso)
+                    percs.append(perc)
+            predicted_distributions.append({'isotopomers': isos, 'percentages': percs})
+
+        return mean_abs, std_abs, predicted_distributions
 
     def simulate_from_predictions(self, predicted_distributions, hsqc_vector):
         """Simulates HSQC and GC-MS data from predicted distributions."""
