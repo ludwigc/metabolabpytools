@@ -11,7 +11,14 @@ Example:
 import argparse
 import os
 
+import numpy as np
+
 from metabolabpytools import isotopomerAnalysis
+
+# Fixed seed for data simulation so the training set (and the held-out test
+# split) are identical across runs. --seed varies only the model training,
+# which is what best-of-N model selection should explore.
+DATA_SEED = 1234
 
 
 def default_n_distributions(n_carbons):
@@ -31,7 +38,14 @@ def main():
                         help="Number of synthetic samples to simulate (default scales with carbon count).")
     parser.add_argument("--epochs", type=int, default=500, help="Max epochs (early stopping usually stops sooner).")
     parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Training seed (weight init/dropout). Same seed -> identical model. "
+                             "Try different seeds and keep-best retains the lowest test-MAE one.")
+    parser.add_argument("--force", action="store_true",
+                        help="Overwrite the saved model even if this run's test MAE is not better.")
     parser.add_argument("--out-dir", default="saved_models", help="Directory to save the trained model.")
+    parser.add_argument("--summary-dir", default="model_summaries",
+                        help="Directory for the model summary CSV (holds the best test MAE for keep-best).")
     parser.add_argument("--work-dir", default=".",
                         help="Directory to run in; sim_data/ and saved_models/ are created here.")
     parser.add_argument("--labeled-only", action="store_true",
@@ -48,6 +62,8 @@ def main():
 
     analysis = isotopomerAnalysis.IsotopomerAnalysisNN()
 
+    # Deterministic simulation: fixed data seed -> identical dataset every run.
+    np.random.seed(DATA_SEED)
     print(f"Simulating {n_distributions} distributions for HSQC vector {hsqc_vector} ({n_carbons} carbons)...")
     distributions = analysis.generate_isotopomer_distributions(n_distributions=n_distributions, n_carbons=n_carbons)
     isotopomer_data, hsqc_data, gcms_data = analysis.simulate_hsqc_gcms(distributions, hsqc_vector)
@@ -69,24 +85,16 @@ def main():
             print(f"Labelled-only: dropping {dropped} all-unlabelled samples.")
         X, Y = X[keep], Y[keep]
 
-    print(f"Training on X{X.shape} -> Y{Y.shape} ...")
-    # Labelled-only models must not overwrite baseline models for the same
-    # vector, so we save them ourselves under a distinct name.
-    save_via_helper = not args.labeled_only
-    model, _ = analysis.train_neural_network(
-        X, Y, hsqc_vector=hsqc_vector, epochs=args.epochs, batch_size=args.batch_size,
-        save=save_via_helper, save_dir=args.out_dir,
+    print(f"Training on X{X.shape} -> Y{Y.shape}  (seed={args.seed}) ...")
+    _, _, info = analysis.train_and_keep_best(
+        X, Y, hsqc_vector, labeled=args.labeled_only, seed=args.seed,
+        epochs=args.epochs, batch_size=args.batch_size, force=args.force,
+        save_dir=args.out_dir, summary_dir=args.summary_dir,
     )
 
-    if args.labeled_only:
-        os.makedirs(args.out_dir, exist_ok=True)
-        base = analysis.generate_model_filename(hsqc_vector)          # model_hsqc_..._.keras
-        model_name = base.replace(".keras", "_labeled.keras")
-        model.save(os.path.join(args.out_dir, model_name))
-    else:
-        model_name = analysis.generate_model_filename(hsqc_vector)
-
-    print(f"Done. Model saved to {os.path.join(args.out_dir, model_name)}")
+    path = analysis.best_model_path(hsqc_vector, labeled=args.labeled_only, directory=args.out_dir)
+    verb = "saved" if info["saved"] else "unchanged (existing model was better)"
+    print(f"Done. Best model {verb}: {path}")
 
 
 if __name__ == "__main__":

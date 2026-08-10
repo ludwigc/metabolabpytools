@@ -1080,44 +1080,67 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
                       loss='mean_squared_error', metrics=['mae'])
         return model
 
-    def train_neural_network(self, X_noisy, Y, hsqc_vector=None, plot_filename="trainingloss0110.png",
-                             epochs=500, batch_size=64, validation_split=0.2, save=True, save_dir="saved_models"):
+    def train_neural_network(self, X_noisy, Y, plot_filename="trainingloss0110.png",
+                             epochs=500, batch_size=64, validation_split=0.2, seed=None, verbose=1):
+        """Train the fixed-architecture model on (X, Y) and return (model, history).
+
+        Pass ``seed`` to make the run reproducible (fixes weight init, dropout,
+        and the train/validation shuffle). Saving/model-selection is handled by
+        :meth:`train_and_keep_best`, not here.
+        """
+        if seed is not None:
+            tf.keras.utils.set_random_seed(seed)
+
         input_dim = X_noisy.shape[1]  # Number of features in X
         output_dim = Y.shape[1]  # Number of isotopomers in Y
 
         # Create and compile the model
         model = self.create_dynamic_nn_model(input_dim, output_dim)
+        if verbose:
+            model.summary()
 
-        # Display the model architecture
-        model.summary()
-
-        # Split the data into training and validation sets
+        # Split into train/validation (validation drives early stopping).
         X_train, X_val, Y_train, Y_val = train_test_split(X_noisy, Y, test_size=validation_split, random_state=42)
 
         # Early stopping keeps training fast: the high epoch ceiling is rarely reached.
         early_stopping = EarlyStopping(monitor='val_loss', patience=40, restore_best_weights=True)
 
-        # Train the model
         history = model.fit(X_train, Y_train, epochs=epochs, batch_size=batch_size,
-                            validation_data=(X_val, Y_val), callbacks=[early_stopping])
+                            validation_data=(X_val, Y_val), callbacks=[early_stopping], verbose=verbose)
 
-        # Evaluate the model on the validation set
-        val_loss, val_mae = model.evaluate(X_val, Y_val)
-        print(f"Validation Loss: {val_loss}, Validation MAE: {val_mae}")
-
-        # Make predictions
-        predictions = model.predict(X_val)
-
-        # Example: Comparing predictions with actual Y values
-        for i in range(5):
-            print(f"Predicted: {predictions[i]}, Actual: {Y_val[i]}")
-
-        # Save the trained model and a summary (using the honest validation metrics)
-        if save and hsqc_vector is not None:
-            self.save_model(model, hsqc_vector, directory=save_dir)
-            self.save_training_summary(hsqc_vector, val_loss, val_mae)
+        val_loss, val_mae = model.evaluate(X_val, Y_val, verbose=0)
+        print(f"Validation Loss: {val_loss:.4f}, Validation MAE: {val_mae:.4f}")
 
         return model, history
+
+    def train_and_keep_best(self, X, Y, hsqc_vector, labeled=False, seed=42, test_size=0.15,
+                            epochs=500, batch_size=64, force=False,
+                            save_dir="saved_models", summary_dir="model_summaries", verbose=1):
+        """Reproducible train + honest evaluation + keep-best save.
+
+        Holds out a fixed test set (identical across runs, independent of
+        ``seed``), trains a seeded model on the rest, evaluates on the held-out
+        test set, and only overwrites the saved model for this vector if the new
+        test MAE beats the stored best (``force=True`` overwrites regardless).
+
+        Because the test split is fixed and ``seed`` controls only the training
+        randomness, sweeping seeds gives comparable best-of-N restarts. Returns
+        ``(model, history, info)`` where info has test_mse/test_mae/saved.
+        """
+        # Fixed held-out test set: random_state is constant so the test set is
+        # the same for every seed, making keep-best comparisons fair.
+        X_dev, X_test, Y_dev, Y_test = train_test_split(X, Y, test_size=test_size, random_state=12345)
+
+        model, history = self.train_neural_network(
+            X_dev, Y_dev, epochs=epochs, batch_size=batch_size, seed=seed, verbose=verbose)
+
+        test_mse, test_mae = model.evaluate(X_test, Y_test, verbose=0)
+        print(f"Held-out TEST: MSE={test_mse:.4f}, MAE={test_mae:.4f} (seed={seed})")
+
+        info = self.save_model_if_better(model, hsqc_vector, test_mse, test_mae, labeled=labeled,
+                                         directory=save_dir, summary_dir=summary_dir, force=force)
+        info.update({'test_mse': test_mse, 'test_mae': test_mae})
+        return model, history, info
 
     def tune_model(self, X, Y, hsqc_vector, plot_filename="TUNEDtrainingloss0110.png"):
         input_dim = X.shape[1]
@@ -1201,17 +1224,56 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
             )
             return model
 
-    def generate_model_filename(self, hsqc_vector):
+    def generate_model_filename(self, hsqc_vector, labeled=False):
         hsqc_str = '_'.join(map(str, hsqc_vector))
-        filename = f"model_hsqc_{hsqc_str}.keras"
-        return filename
+        suffix = '_labeled' if labeled else ''
+        return f"model_hsqc_{hsqc_str}{suffix}.keras"
 
-    def save_model(self, model, hsqc_vector, directory="saved_models"):
+    def best_model_path(self, hsqc_vector, labeled=False, directory="saved_models"):
+        """Path to the current best saved model for this vector (may not exist yet)."""
+        return os.path.join(directory, self.generate_model_filename(hsqc_vector, labeled=labeled))
+
+    def save_model(self, model, hsqc_vector, directory="saved_models", labeled=False):
         if not os.path.exists(directory):
             os.makedirs(directory)
-        filename = self.generate_model_filename(hsqc_vector)
+        filename = self.generate_model_filename(hsqc_vector, labeled=labeled)
         model.save(os.path.join(directory, filename))
         print(f"Model saved as {filename} in {directory}")
+
+    def _existing_test_mae(self, hsqc_vector, labeled=False, summary_dir="model_summaries"):
+        """Read the stored test MAE for this vector's best model, or None if absent."""
+        path = os.path.join(summary_dir, f"model_summary_{self.generate_model_filename(hsqc_vector, labeled=labeled)}.csv")
+        if not os.path.exists(path):
+            return None
+        try:
+            df = pd.read_csv(path)
+            # Only compare against a stored *test* MAE. Older summaries recorded a
+            # validation MAE under 'MAE'; that is not comparable to test MAE, so we
+            # ignore it and let the first new-format run re-establish the baseline.
+            if 'test_MAE' in df.columns and len(df):
+                return float(df['test_MAE'].iloc[0])
+        except Exception:
+            return None
+        return None
+
+    def save_model_if_better(self, model, hsqc_vector, test_mse, test_mae, labeled=False,
+                             directory="saved_models", summary_dir="model_summaries", force=False):
+        """Keep-best: overwrite the saved model only if test MAE improves (or force)."""
+        prev = self._existing_test_mae(hsqc_vector, labeled=labeled, summary_dir=summary_dir)
+        fname = self.generate_model_filename(hsqc_vector, labeled=labeled)
+        improved = prev is None or test_mae < prev
+        if force or improved:
+            self.save_model(model, hsqc_vector, directory=directory, labeled=labeled)
+            self.save_training_summary(hsqc_vector, test_mse, test_mae, labeled=labeled, directory=summary_dir)
+            if prev is None:
+                print(f"{fname}: saved (first model)  test MAE {test_mae:.4f}")
+            elif improved:
+                print(f"{fname}: NEW BEST  test MAE {test_mae:.4f}  (was {prev:.4f})")
+            else:
+                print(f"{fname}: forced save  test MAE {test_mae:.4f}  (best remains {prev:.4f})")
+            return {'saved': True, 'prev_test_mae': prev, 'is_best': improved}
+        print(f"{fname}: kept existing best  (test MAE {prev:.4f} <= new {test_mae:.4f}); not overwritten")
+        return {'saved': False, 'prev_test_mae': prev, 'is_best': False}
 
     def save_model_summary(self, model, val_loss, val_mae, tuner, hsqc_vector, directory="model_summaries"):
         if not os.path.exists(directory):
@@ -1233,21 +1295,23 @@ class IsotopomerAnalysisNN(IsotopomerAnalysis):
         summary_df.to_csv(summary_filename, index=False)
         print(f"Model summary saved as {summary_filename}")
 
-    def save_training_summary(self, hsqc_vector, val_loss, val_mae, directory="model_summaries"):
-        """Writes a summary for a fixed-architecture model (no tuner required)."""
+    def save_training_summary(self, hsqc_vector, test_mse, test_mae, labeled=False, directory="model_summaries"):
+        """Writes a summary recording the held-out test metrics used for keep-best."""
         if not os.path.exists(directory):
             os.makedirs(directory)
 
         summary_data = {
-            'Model Name': [self.generate_model_filename(hsqc_vector)],
-            'MSE': [val_loss],
-            'MAE': [val_mae],
+            'Model Name': [self.generate_model_filename(hsqc_vector, labeled=labeled)],
+            'test_MSE': [test_mse],
+            'test_MAE': [test_mae],
+            'target': ['labelled-only (conditional)' if labeled else 'full distribution'],
             'architecture': ['fixed: Dense(128)-Dropout(0.05)-Dense(64)-Dropout(0.05)'],
             'learning_rate': [1e-3],
         }
 
         summary_df = pd.DataFrame(summary_data)
-        summary_filename = os.path.join(directory, f"model_summary_{self.generate_model_filename(hsqc_vector)}.csv")
+        summary_filename = os.path.join(
+            directory, f"model_summary_{self.generate_model_filename(hsqc_vector, labeled=labeled)}.csv")
         summary_df.to_csv(summary_filename, index=False)
         print(f"Model summary saved as {summary_filename}")
 

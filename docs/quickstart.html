@@ -129,8 +129,8 @@ pip install -e .</pre>
         <h3>A guided walkthrough</h3>
         <p>In <code class="inl">metabolabpytools/jupyter/</code>:</p>
         <ul class="clean">
-          <li>Open <strong>01_train.ipynb</strong>, set <code class="inl">hsqc_vector</code>, Run All &mdash; simulates data, trains, and saves the model.</li>
-          <li>Open <strong>02_predict.ipynb</strong>, set the same vector, the model path and metabolite, Run All to get the distribution and a results file.</li>
+          <li>Open <strong>01_train.ipynb</strong>, set <code class="inl">hsqc_vector</code>, Run All &mdash; simulates data, trains a seeded model, and keeps it if it beats the saved best.</li>
+          <li>Open <strong>02_predict.ipynb</strong>, set the same vector and metabolite, Run All &mdash; it auto-loads the current best model and writes a results file.</li>
         </ul>
       </div>
       <div class="card">
@@ -139,12 +139,11 @@ pip install -e .</pre>
         <p>Run from <code class="inl">metabolabpytools/jupyter/</code> (where the example data lives), or add <code class="inl">--work-dir&nbsp;&lt;path&gt;</code>.</p>
       </div>
     </div>
-<pre style="margin-top:14px"><span class="c"># train a model for one vector</span>
+<pre style="margin-top:14px"><span class="c"># train a model for one vector (deterministic; --seed default 42)</span>
 mlp-train --hsqc-vector 0 1 1
 
-<span class="c"># predict on measured data</span>
-mlp-predict --model saved_models/model_hsqc_0_1_1.keras \
-  --hsqc-vector 0 1 1 \
+<span class="c"># predict on measured data (auto-loads the current best model)</span>
+mlp-predict --hsqc-vector 0 1 1 \
   --hsqc-data hsqcData1.xlsx \
   --gcms-data gcmsData1.xlsx \
   --metabolite L-LacticAcid</pre>
@@ -155,12 +154,30 @@ mlp-predict --model saved_models/model_hsqc_0_1_1.keras \
   </section>
 
   <section>
+    <h2><span class="n">3&frac12;</span><span class="t">Reproducible &amp; keep-best</span></h2>
+    <p class="step-lede">The dataset is simulated from a fixed seed and <code class="inl">--seed</code>
+      (default 42) fixes the training run, so the same command always yields the same model. Each run
+      is scored on a <strong>held-out test set</strong> and only replaces the saved model if the test
+      MAE improves &mdash; so the file on disk is always the best found, and predict always uses it.</p>
+<pre><span class="c"># search for a better model by sweeping seeds; the best is kept automatically</span>
+for s in 1 2 3 4 5; do mlp-train --hsqc-vector 0 1 1 --seed $s; done
+
+mlp-train --hsqc-vector 0 1 1 --seed 7 --force   <span class="c"># overwrite even if not better</span></pre>
+    <div class="note">
+      <strong>Labelled-only (optional)</strong> &mdash; add <code class="inl">--labeled-only</code> to
+      both commands to fit only the labelled isotopomers (the dominant unlabelled peak is dropped and
+      recombined from GC&#8209;MS on predict). In a 5-seed test this improved the labelling pattern by
+      11&ndash;27%. See <a href="how-it-works.html">How it works</a>.
+    </div>
+  </section>
+
+  <section>
     <h2><span class="n">4</span><span class="t">Where results land</span></h2>
     <p class="step-lede">Written relative to your working directory:</p>
     <table>
       <tbody>
         <tr><td><code>saved_models/</code></td><td>the trained <code>.keras</code> model</td></tr>
-        <tr><td><code>model_summaries/</code></td><td>architecture + validation MAE/MSE</td></tr>
+        <tr><td><code>model_summaries/</code></td><td>architecture + held-out test MAE/MSE (used for keep-best)</td></tr>
         <tr><td><code>sim_data/</code></td><td>the simulated training data (kept for reference)</td></tr>
         <tr><td><code>nn_analysis_results/</code></td><td>predictions vs. back-calculated data</td></tr>
       </tbody>
@@ -173,6 +190,7 @@ mlp-predict --model saved_models/model_hsqc_0_1_1.keras \
       <li><strong>Training is fast</strong> &mdash; seconds for 3-carbon, a few minutes for 5 &mdash; so retrain freely to iterate.</li>
       <li><strong>Accuracy</strong> is excellent for 3-carbon metabolites (~0.5% MAE) and settles near ~1% for 4&ndash;5 carbons, which is a limit of the measurements rather than the model.</li>
       <li><strong>Every prediction returns a per-isotopomer uncertainty</strong> (a standard deviation from Monte-Carlo dropout) alongside the mean.</li>
+      <li><strong>Runs are reproducible</strong> &mdash; a fixed data seed and <code class="inl">--seed</code> make training deterministic, and the best model is retained across runs.</li>
     </ul>
     <p style="color:var(--muted); font-size:14px">See <a href="how-it-works.html">How it works</a> for why accuracy plateaus and what the model is doing under the hood.</p>
   </section>
